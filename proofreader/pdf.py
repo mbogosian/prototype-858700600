@@ -175,7 +175,11 @@ def _find_anchor_ocr(page_img: Image.Image) -> bool:
     strip = page_img.crop((0, y0, page_img.width, y1))
 
     ocr = _get_ocr()
-    result = ocr.ocr(np.array(strip), cls=False)
+    try:
+        result = ocr.ocr(np.array(strip.convert("RGB")), cls=False)
+    except Exception as exc:
+        logger.warning("OCR inference failed in anchor search (%s); treating as not found", exc)
+        return False
     if not result or not result[0]:
         return False
     for line in result[0]:

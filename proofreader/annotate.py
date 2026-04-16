@@ -124,7 +124,7 @@ def _run_ocr(image: Image.Image) -> list[tuple[list[list[float]], str, float]]:
         return []
     ocr = _get_ocr()
     try:
-        result = ocr.ocr(np.array(image), cls=False)
+        result = ocr.ocr(np.array(image.convert("RGB")), cls=False)
     except Exception as exc:
         # PaddlePaddle can raise RuntimeError ("could not create a primitive
         # descriptor for a reorder primitive") and similar oneDNN/MKL-DNN

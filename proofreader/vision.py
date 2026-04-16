@@ -248,7 +248,7 @@ Return your findings as a single JSON object with this exact structure:
     {{
       "field": "<field_name>",
       "verdict": "<{verdict_names}>",
-      "extracted": "<exact text found on label, or null>",
+      "extracted": "<exact text found on label, or null if genuinely absent>",
       "note": "<brief explanation if verdict is not PASS, or null>"
     }},
     ...
@@ -259,6 +259,9 @@ Verdict definitions:
 {verdict_defs}
 
 Rules:
+- Always populate "extracted" with the actual text you found on the label, even for WARN or FAIL
+  verdicts. Only set "extracted" to null when the field is genuinely absent from the label.
+  The extracted text is used to locate and highlight the field in the label image.
 - If import_indicators is true, add a "country_of_origin" entry to the fields list.
 - For the government_warning field: any deviation from the exact required text is FAIL.
   For bold formatting: FAIL only if "GOVERNMENT WARNING:" is clearly the same weight or lighter
