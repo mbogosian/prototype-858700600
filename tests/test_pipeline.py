@@ -6,6 +6,7 @@ external calls (pdf.extract_page1, vision.read_labels) are patched with
 controlled return values. Report output is written to tmp_path and verified.
 """
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,7 @@ import pytest
 from PIL import Image
 
 from proofreader.models import FieldFinding, LabelFindings, Page1Result, Reason, Verdict
+from proofreader import worker
 from proofreader.worker import _process, _set_job, _jobs, _jobs_lock
 from tests.fake_readers import (
     FakeLabelReader,
@@ -287,3 +289,175 @@ def test_fake_reader_not_called_on_terminal(tmp_path: Path) -> None:
             _process(fake_pdf, "test013", tmp_path)
 
     assert reader.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# submitted_at passthrough — _process() passes it to report functions
+# ---------------------------------------------------------------------------
+
+
+def test_process_submitted_at_in_findings_json(tmp_path: Path) -> None:
+    """submitted_at from job state is written into findings.json."""
+    _set_job("test014", status="queued", original_filename="test.pdf", submitted_at=1_700_000_000.0)
+    _run_process(tmp_path, _page1_success("wine"), job_id="test014")
+
+    data = json.loads((tmp_path / "test014" / "findings.json").read_text())
+    assert data["submitted_at"] == 1_700_000_000.0
+
+
+def test_process_terminal_submitted_at_in_findings_json(tmp_path: Path) -> None:
+    """submitted_at from job state is written into findings.json on the terminal path."""
+    _set_job("test015", status="queued", original_filename="test.pdf", submitted_at=9_999_999.0)
+    fake_pdf = tmp_path / "test015.pdf"
+    fake_pdf.write_bytes(b"%PDF fake")
+
+    with patch(
+        "proofreader.worker.pdf.extract_page1",
+        return_value=_page1_terminal(Reason.ANCHOR_NOT_FOUND),
+    ):
+        _process(fake_pdf, "test015", tmp_path)
+
+    data = json.loads((tmp_path / "test015" / "findings.json").read_text())
+    assert data["submitted_at"] == 9_999_999.0
+
+
+def test_process_original_filename_in_findings_json(tmp_path: Path) -> None:
+    """original_filename from job state is written into findings.json."""
+    _set_job("test016", status="queued", original_filename="chardonnay_2024.pdf")
+    _run_process(tmp_path, _page1_success("wine"), job_id="test016")
+
+    data = json.loads((tmp_path / "test016" / "findings.json").read_text())
+    assert data["original_filename"] == "chardonnay_2024.pdf"
+
+
+# ---------------------------------------------------------------------------
+# start() — outbox re-inflation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def worker_globals_reset():
+    """Restore worker module globals modified by start() after each test."""
+    yield
+    with _jobs_lock:
+        _jobs.clear()
+    worker._executor = None
+    worker._observer = None
+    worker._inbox = None
+    worker._outbox = None
+    worker._log_loop = None
+
+
+def _call_start(inbox: Path, outbox: Path) -> None:
+    """Call worker.start() with mocked ThreadPoolExecutor and Observer."""
+    loop = asyncio.new_event_loop()
+    try:
+        with patch("proofreader.worker.ThreadPoolExecutor"), \
+             patch("proofreader.worker.Observer"):
+            worker.start(inbox, outbox, 1, loop)
+    finally:
+        loop.close()
+
+
+def _make_completed_job(outbox: Path, job_id: str, verdict: str = "PASS",
+                         original_filename: str | None = "label.pdf",
+                         submitted_at: float | None = 1_700_000_000.0) -> Path:
+    """Write a minimal complete job directory to outbox; return the job dir."""
+    job_dir = outbox / job_id
+    job_dir.mkdir(parents=True)
+    (job_dir / "report.html").write_text("<!DOCTYPE html><html></html>")
+    (job_dir / "findings.json").write_text(json.dumps({
+        "job_id": job_id,
+        "verdict": verdict,
+        "original_filename": original_filename,
+        "submitted_at": submitted_at,
+        "fields": [],
+    }))
+    return job_dir
+
+
+def test_start_reinflates_completed_job(tmp_path: Path, worker_globals_reset) -> None:
+    """A complete outbox job (report.html + findings.json) is loaded into _jobs."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    _make_completed_job(outbox, "aabbcc", verdict="PASS")
+
+    _call_start(inbox, outbox)
+
+    job = worker.get_job("aabbcc")
+    assert job is not None
+    assert job["status"] == "complete"
+    assert job["verdict"] == "PASS"
+
+
+def test_start_reinflates_original_filename_and_submitted_at(tmp_path: Path, worker_globals_reset) -> None:
+    """Re-inflated job carries original_filename and submitted_at from findings.json."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    _make_completed_job(outbox, "ddeeff", original_filename="chardonnay.pdf", submitted_at=42.5)
+
+    _call_start(inbox, outbox)
+
+    job = worker.get_job("ddeeff")
+    assert job["original_filename"] == "chardonnay.pdf"
+    assert job["submitted_at"] == 42.5
+
+
+def test_start_skips_outbox_dir_without_report_html(tmp_path: Path, worker_globals_reset) -> None:
+    """Outbox dir with findings.json but no report.html is not re-inflated (still processing)."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    job_dir = outbox / "incomplete"
+    job_dir.mkdir(parents=True)
+    (job_dir / "findings.json").write_text(json.dumps({"job_id": "incomplete", "verdict": "PASS", "fields": []}))
+
+    _call_start(inbox, outbox)
+
+    assert worker.get_job("incomplete") is None
+
+
+def test_start_skips_outbox_dir_without_findings_json(tmp_path: Path, worker_globals_reset) -> None:
+    """Outbox dir with report.html but no findings.json is not re-inflated."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    job_dir = outbox / "nofindings"
+    job_dir.mkdir(parents=True)
+    (job_dir / "report.html").write_text("<!DOCTYPE html><html></html>")
+
+    _call_start(inbox, outbox)
+
+    assert worker.get_job("nofindings") is None
+
+
+def test_start_skips_malformed_findings_json(tmp_path: Path, worker_globals_reset) -> None:
+    """Malformed findings.json is silently skipped; no exception raised."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    job_dir = outbox / "badjson"
+    job_dir.mkdir(parents=True)
+    (job_dir / "report.html").write_text("<!DOCTYPE html><html></html>")
+    (job_dir / "findings.json").write_text("not valid json{{{")
+
+    _call_start(inbox, outbox)  # must not raise
+
+    assert worker.get_job("badjson") is None
+
+
+def test_start_outbox_does_not_overwrite_inbox_job(tmp_path: Path, worker_globals_reset) -> None:
+    """An outbox entry for a job already registered (e.g. from inbox re-queue) is skipped."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    inbox.mkdir(parents=True)
+
+    # Put a PDF in inbox so the inbox re-queue loop registers it.
+    job_id = "overlap1"
+    (inbox / f"{job_id}.pdf").write_bytes(b"%PDF fake")
+    # Also put a completed dir in outbox for the same job_id.
+    _make_completed_job(outbox, job_id, verdict="FAIL")
+
+    _call_start(inbox, outbox)
+
+    # The job should be registered but with status "queued" (from inbox), not "complete".
+    job = worker.get_job(job_id)
+    assert job is not None
+    assert job["status"] == "queued"

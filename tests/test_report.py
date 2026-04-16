@@ -338,3 +338,59 @@ def test_render_logs_html_escaped(tmp_path: Path) -> None:
     html = (tmp_path / "report.html").read_text()
     assert "<b>bold log line</b>" not in html
     assert "&lt;b&gt;" in html
+
+
+# ---------------------------------------------------------------------------
+# render_terminal — original_filename and submitted_at in findings.json
+# ---------------------------------------------------------------------------
+
+
+def test_terminal_findings_json_includes_original_filename(tmp_path: Path) -> None:
+    render_terminal("abc123", _page1_terminal(), tmp_path, original_filename="wine_label.pdf")
+    data = json.loads((tmp_path / "findings.json").read_text())
+    assert data["original_filename"] == "wine_label.pdf"
+
+
+def test_terminal_findings_json_includes_submitted_at(tmp_path: Path) -> None:
+    render_terminal("abc123", _page1_terminal(), tmp_path, submitted_at=1_700_000_000.0)
+    data = json.loads((tmp_path / "findings.json").read_text())
+    assert data["submitted_at"] == 1_700_000_000.0
+
+
+def test_terminal_findings_json_original_filename_none_by_default(tmp_path: Path) -> None:
+    """original_filename key is present and null when not supplied."""
+    render_terminal("abc123", _page1_terminal(), tmp_path)
+    data = json.loads((tmp_path / "findings.json").read_text())
+    assert "original_filename" in data
+    assert data["original_filename"] is None
+
+
+# ---------------------------------------------------------------------------
+# render — original_filename and submitted_at in findings.json
+# ---------------------------------------------------------------------------
+
+
+def test_render_findings_json_includes_original_filename(tmp_path: Path) -> None:
+    render(
+        "abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path,
+        original_filename="wine_label.pdf",
+    )
+    data = json.loads((tmp_path / "findings.json").read_text())
+    assert data["original_filename"] == "wine_label.pdf"
+
+
+def test_render_findings_json_includes_submitted_at(tmp_path: Path) -> None:
+    render(
+        "abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path,
+        submitted_at=1_700_000_000.0,
+    )
+    data = json.loads((tmp_path / "findings.json").read_text())
+    assert data["submitted_at"] == 1_700_000_000.0
+
+
+def test_render_findings_json_original_filename_none_by_default(tmp_path: Path) -> None:
+    """original_filename key is present and null when not supplied."""
+    render("abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path)
+    data = json.loads((tmp_path / "findings.json").read_text())
+    assert "original_filename" in data
+    assert data["original_filename"] is None
