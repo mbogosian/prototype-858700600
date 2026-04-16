@@ -1,16 +1,17 @@
+# See also: .dockerignore — review both when adding entries to either.
+
 # Python-generated files
-__pycache__/
+*.egg-info
 *.py[oc]
+.coverage
+__pycache__/
 build/
 dist/
 wheels/
-*.egg-info
 
 # Virtual environments
-.venv
+.venv*/
 
 # Local testing
-.coverage
-in/
-out/
-*box/
+inbox/
+outbox/

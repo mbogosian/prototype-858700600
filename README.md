@@ -27,24 +27,86 @@ Much of this work is mechanical: confirming that the government warning statemen
 
 ## Setup
 
+### With Docker (recommended)
+
+Requires Docker and an Anthropic API key. PaddleOCR models (~200 MB) are
+downloaded and baked into the image at build time so they are available
+immediately on container start with no cold-start download delay.
+
+```bash
+# Create the work directories used as bind mounts
+mkdir -p inbox outbox
+
+# Build the image (downloads ~200 MB of PaddleOCR models on first build;
+# subsequent builds reuse the cached layer unless pyproject.toml or uv.lock
+# changes)
+docker compose build
+
+# Start the server
+ANTHROPIC_API_KEY=your_key_here docker compose up
+```
+
+The web UI is available at `http://localhost:8000`. Processed files land in
+`outbox/` and persist across container restarts. Drop PDFs directly into
+`inbox/` or upload through the browser — both paths trigger the same pipeline.
+
+### Without Docker
+
+For development without the container overhead. Requires Python 3.11 and uv.
+
 ```bash
 # Install dependencies
 uv sync
 
-# Set API key and directory paths
-export ANTHROPIC_API_KEY=your_key_here
-export PROOFREADER_INBOX=./inbox
-export PROOFREADER_OUTBOX=./outbox
-export PROOFREADER_WORKERS=3
-
-# Create directories if needed
+# Create work directories
 mkdir -p inbox outbox
 
-# Run development server (file watcher starts automatically on startup)
-uv run uvicorn main:app --reload
+# Start the development server (auto-reloads on code changes)
+ANTHROPIC_API_KEY=your_key_here uv run uvicorn main:app --reload
 ```
 
-The web UI is served at `http://localhost:8000`. Drop PDFs into the inbox directory or upload via the browser — both trigger the same worker pipeline.
+The remaining environment variables default to sensible values and only need
+to be set to override:
+
+| Variable | Default | Description |
+|---|---|---|
+| `PROOFREADER_INBOX` | `./inbox` | Directory watched for incoming PDFs |
+| `PROOFREADER_OUTBOX` | `./outbox` | Directory for completed results |
+| `PROOFREADER_WORKERS` | `3` | ThreadPoolExecutor size |
+| `PROOFREADER_PORT` | `8000` | Port used by the Azure keepalive thread |
+| `PROOFREADER_LOG_LEVEL` | `INFO` | Root log level |
+| `PROOFREADER_REPORT_LOG_LEVEL` | `INFO` | Minimum level buffered into reports and streamed via `/logs` |
+
+### Developer workflow
+
+Install dev dependencies with `uv sync --extra dev`, then:
+
+```bash
+# Run the unit test suite (integration tests excluded by default)
+uv run --extra dev pytest
+
+# With coverage report
+uv run --extra dev pytest --cov --cov-report=term-missing
+
+# Run integration tests (requires PaddleOCR initialisation and sample PDFs
+# in tests/sample_applications/ — slow, loads ~1.5 GB into RAM)
+uv run --extra dev pytest -m integration
+
+# Lint
+uv run --extra dev ruff check
+
+# Auto-fix lint issues
+uv run --extra dev ruff check --fix
+
+# Format
+uv run --extra dev ruff format
+
+# Type check
+uv run --extra dev ty check
+```
+
+The default pytest run (`-m "not integration"`) is fast — no PaddleOCR, no API
+calls, all external dependencies mocked. It's safe to run on every save.
 
 ---
 
@@ -547,7 +609,7 @@ One-time setup: Azure resource group + Container Apps environment (3 CLI command
 
 ### Cold start
 
-PaddleOCR model loading adds 20–40 seconds on first request after idle. Acceptable for a demo; document as known limitation.
+PaddleOCR models are baked into the image at build time (~200 MB). On a cold start the models load from the local filesystem — no network download is needed. Model loading itself adds 20–40 seconds before the first job can be processed; the UI is responsive during this window but submitted jobs will queue rather than begin immediately.
 
 ### Keeping alive during active work
 
@@ -563,7 +625,7 @@ PaddleOCR requires approximately 1–1.5 GB RAM at inference time. The 2 GB allo
 
 ### Local development
 
-`docker compose up` with `inbox/` and `outbox/` as bind mounts is the standard local workflow. No Azure account required for development.
+See the Setup section above for the full `docker compose` and bare-uvicorn workflows.
 
 ---
 

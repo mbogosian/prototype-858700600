@@ -1,0 +1,12 @@
+services:
+  proofreader:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      # Bind-mount inbox and outbox so processed files persist across container
+      # restarts and can be inspected directly from the host.
+      - ./inbox:/app/inbox
+      - ./outbox:/app/outbox

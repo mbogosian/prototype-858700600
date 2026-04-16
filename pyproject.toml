@@ -25,7 +25,7 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",

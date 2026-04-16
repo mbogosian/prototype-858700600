@@ -851,7 +851,7 @@ dependencies = [
     { name = "watchdog" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -864,7 +864,6 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.25" },
     { name = "fastapi", specifier = ">=0.111" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "opencv-contrib-python-headless", specifier = ">=4.13.0.92" },
     { name = "opencv-python-headless", specifier = ">=4.13.0.92" },
@@ -872,17 +871,21 @@ requires-dist = [
     { name = "paddlepaddle", specifier = ">=2.6,<3" },
     { name = "pillow", specifier = ">=10.3" },
     { name = "pymupdf", specifier = ">=1.24" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "setuptools", specifier = ">=82.0.1" },
     { name = "sse-starlette", specifier = ">=2.1" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
     { name = "watchdog", specifier = ">=4.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pytest", specifier = ">=8.2" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.9" },
+    { name = "ty", specifier = ">=0.0.1a6" },
+]
 
 [[package]]
 name = "protobuf"
