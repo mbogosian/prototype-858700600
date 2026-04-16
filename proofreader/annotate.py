@@ -62,11 +62,17 @@ def _get_ocr():
     global _ocr
     if _ocr is None:
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+        # Same three-vector monkeypatch as in pdf._get_ocr() — see comment there.
+        # Whichever module initialises PaddleOCR first installs the patches; the
+        # second call is a no-op since the singleton check guards entry.
+        logging.disable = lambda level=logging.CRITICAL: None  # type: ignore[method-assign]
+        logging.basicConfig = lambda **kwargs: None  # type: ignore[method-assign]
+        logging.getLogger().setLevel = lambda level: None  # block root-level changes
         from paddleocr import PaddleOCR
 
         _ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-        # Same reset as in pdf._get_ocr() — see comment there.
-        logging.disable(logging.NOTSET)
+        for _name in ("ppocr", "paddle", "paddleocr", "ppdet"):
+            logging.getLogger(_name).setLevel(logging.WARNING)
     return _ocr
 
 

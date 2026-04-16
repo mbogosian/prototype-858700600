@@ -108,15 +108,32 @@ def _get_ocr():
         # and cached. For stronger guarantees in production, pin the model version
         # and verify SHA256 hashes at container build time instead.
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+
+        # Paddle's C extension mutates global Python logging state during model
+        # loading — from both the constructor call and background threads that can
+        # fire after it returns. Three known attack vectors, all patched here:
+        #
+        #   1. logging.disable(level)          — sets manager.disable globally
+        #   2. logging.basicConfig(level=...)  — adds handler to root logger and
+        #                                        may raise its level
+        #   3. logging.getLogger().setLevel()  — raises root logger level to
+        #                                        WARNING, silencing our INFO logs
+        #
+        # The patches are permanent because background threads can fire at any
+        # time; a temporary patch restored after the constructor would still lose
+        # the race. Setting instance attributes on the root Logger object shadows
+        # the class method for that object only, so child loggers are unaffected.
+        # We silence Paddle's own named loggers directly below.
+        logging.disable = lambda level=logging.CRITICAL: None  # type: ignore[method-assign]
+        logging.basicConfig = lambda **kwargs: None  # type: ignore[method-assign]
+        logging.getLogger().setLevel = lambda level: None  # block root-level changes
+
         # Import deferred so the module loads without paddle if OCR isn't needed
         from paddleocr import PaddleOCR
 
         _ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-        # PaddleOCR's show_log=False calls logging.disable(logging.DEBUG), which
-        # raises the global logging threshold and silences our own INFO logs for
-        # all subsequent pipeline stages. Reset it to NOTSET (no threshold) so
-        # our pipeline logging is unaffected after OCR initialisation.
-        logging.disable(logging.NOTSET)
+        for _name in ("ppocr", "paddle", "paddleocr", "ppdet"):
+            logging.getLogger(_name).setLevel(logging.WARNING)
     return _ocr
 
 
