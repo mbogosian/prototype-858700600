@@ -162,6 +162,22 @@ async def original_pdf(job_id: str) -> FileResponse:
     return FileResponse(_result_file(job_id, "original.pdf"), media_type="application/pdf")
 
 
+@app.delete("/results/{job_id}")
+async def delete_result(job_id: str) -> JSONResponse:
+    """Delete a finished job: removes outbox files and in-memory state.
+
+    Returns 404 if the job does not exist, 409 if the job is still queued or
+    processing (deletion of in-flight jobs is not allowed).
+    """
+    job = worker.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.get("status") not in ("complete", "error"):
+        raise HTTPException(status_code=409, detail="job is not yet complete")
+    worker.delete_job(job_id)
+    return JSONResponse({"status": "deleted"})
+
+
 # ---------------------------------------------------------------------------
 # SSE: job events
 # ---------------------------------------------------------------------------

@@ -189,6 +189,30 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 }
 .btn-report:hover { background: #f0f0f0; text-decoration: none; }
 
+.btn-delete {
+  display: inline-block;
+  padding: 0.15em 0.5em;
+  font-size: 0.75em;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fff;
+  color: #aaa;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: inherit;
+  min-width: 5em;         /* wide enough for "Confirm"; prevents layout shift */
+  text-align: center;
+  margin-left: auto;      /* right-justify within the flex job-actions row */
+}
+.btn-delete:hover { background: #fff0f0; border-color: #e0a0a0; color: #c00; }
+.btn-delete-confirm {
+  background: #fff0f0;
+  border-color: #dc3545;
+  color: #dc3545;
+  font-weight: 600;
+}
+.btn-delete-confirm:hover { background: #dc3545; color: #fff; }
+
 .pane-empty {
   padding: 1em 0.65em;
   font-size: 0.82em;
@@ -330,9 +354,10 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const jobs    = new Map();   // job_id → job object
-const myJobs  = new Set();   // job_ids submitted this session (for notifications)
-const queries = { queued: "", progress: "", done: "" };
+const jobs          = new Map();   // job_id → job object
+const myJobs        = new Set();   // job_ids submitted this session (for notifications)
+const pendingDelete = new Map();   // job_id → revert-timer id (two-state delete button)
+const queries       = { queued: "", progress: "", done: "" };
 
 // ── Pane definitions ──────────────────────────────────────────────────────────
 
@@ -379,6 +404,15 @@ function reportLink(job) {
   return `<a class="btn-report" href="/results/${esc(job.job_id)}/report.html" target="_blank">Report ↗</a>`;
 }
 
+function deleteButton(job) {
+  if (job.status !== "complete" && job.status !== "error") return "";
+  const id = esc(job.job_id);
+  if (pendingDelete.has(job.job_id)) {
+    return `<button class="btn-delete btn-delete-confirm" data-job-id="${id}" data-confirm="true">Confirm</button>`;
+  }
+  return `<button class="btn-delete" data-job-id="${id}" data-confirm="false">Delete</button>`;
+}
+
 function cardHtml(job) {
   const id = esc(job.job_id);
   const fn = esc(job.original_filename ?? job.job_id);
@@ -390,7 +424,7 @@ function cardHtml(job) {
     <div class="job-filename" title="${fn}">${fn}</div>
     <div class="job-id">${id}</div>
     <div class="job-actions">
-      ${verdictBadge(job)}${reportLink(job)}
+      ${verdictBadge(job)}${reportLink(job)}${deleteButton(job)}
     </div>
   </div>
 </div>`;
@@ -649,6 +683,58 @@ document.addEventListener("mouseover", e => {
 
 document.addEventListener("mouseout", e => {
   if (e.target.closest(".job-thumb")) hideThumbPreview();
+});
+
+// ── Delete (two-state: Delete → Confirm → execute) ───────────────────────────
+
+async function performDelete(jobId) {
+  try {
+    const resp = await fetch(`/results/${encodeURIComponent(jobId)}`, { method: "DELETE" });
+    if (resp.ok) {
+      jobs.delete(jobId);
+      myJobs.delete(jobId);
+      renderAll();
+    }
+  } catch (_) { /* server unreachable; leave card in place */ }
+}
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".btn-delete");
+  if (!btn) return;
+
+  const jobId     = btn.dataset.jobId;
+  const isPending = btn.dataset.confirm === "true";
+
+  if (!isPending) {
+    // First click: arm the confirm state and start a 1.5 s revert timer
+    btn.dataset.confirm = "true";
+    btn.textContent = "Confirm";
+    btn.classList.add("btn-delete-confirm");
+
+    const timer = setTimeout(() => {
+      pendingDelete.delete(jobId);
+      // Re-render so the button reverts to "Delete" even if card DOM was reused
+      renderAll();
+    }, 2000);
+    pendingDelete.set(jobId, timer);
+  } else {
+    // Second click within the window: cancel timer and execute
+    clearTimeout(pendingDelete.get(jobId));
+    pendingDelete.delete(jobId);
+    performDelete(jobId);
+  }
+});
+
+// Revert "Confirm" → "Delete" when the cursor leaves the button
+document.addEventListener("mouseout", e => {
+  const btn = e.target.closest(".btn-delete");
+  if (!btn || btn.dataset.confirm !== "true") return;
+  // relatedTarget is where the cursor is going; if still inside the button, do nothing
+  if (btn.contains(e.relatedTarget)) return;
+  const jobId = btn.dataset.jobId;
+  clearTimeout(pendingDelete.get(jobId));
+  pendingDelete.delete(jobId);
+  renderAll();
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

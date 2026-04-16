@@ -461,3 +461,69 @@ def test_start_outbox_does_not_overwrite_inbox_job(tmp_path: Path, worker_global
     job = worker.get_job(job_id)
     assert job is not None
     assert job["status"] == "queued"
+
+
+# ---------------------------------------------------------------------------
+# delete_job()
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def set_outbox(tmp_path: Path):
+    """Temporarily point worker._outbox at tmp_path; restore on teardown."""
+    old = worker._outbox
+    worker._outbox = tmp_path
+    yield tmp_path
+    worker._outbox = old
+
+
+def test_delete_job_returns_true_for_complete(set_outbox: Path) -> None:
+    _set_job("del001", status="complete", verdict="PASS")
+    assert worker.delete_job("del001") is True
+
+
+def test_delete_job_removes_from_memory(set_outbox: Path) -> None:
+    _set_job("del002", status="complete", verdict="PASS")
+    worker.delete_job("del002")
+    assert worker.get_job("del002") is None
+
+
+def test_delete_job_removes_outbox_directory(set_outbox: Path) -> None:
+    _set_job("del003", status="complete", verdict="PASS")
+    job_dir = set_outbox / "del003"
+    job_dir.mkdir()
+    (job_dir / "report.html").write_text("report")
+    (job_dir / "findings.json").write_text("{}")
+
+    worker.delete_job("del003")
+
+    assert not job_dir.exists()
+
+
+def test_delete_job_accepts_error_status(set_outbox: Path) -> None:
+    _set_job("del004", status="error", verdict="ERROR")
+    assert worker.delete_job("del004") is True
+    assert worker.get_job("del004") is None
+
+
+def test_delete_job_returns_false_for_unknown_job() -> None:
+    assert worker.delete_job("doesnotexist") is False
+
+
+def test_delete_job_rejects_queued_job() -> None:
+    _set_job("del005", status="queued")
+    assert worker.delete_job("del005") is False
+    assert worker.get_job("del005") is not None   # still present
+
+
+def test_delete_job_rejects_processing_job() -> None:
+    _set_job("del006", status="processing")
+    assert worker.delete_job("del006") is False
+    assert worker.get_job("del006") is not None
+
+
+def test_delete_job_handles_missing_outbox_dir(set_outbox: Path) -> None:
+    """No outbox directory for the job — delete_job should not raise."""
+    _set_job("del007", status="complete", verdict="PASS")
+    # Intentionally no directory created for del007
+    assert worker.delete_job("del007") is True

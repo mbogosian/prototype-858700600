@@ -178,6 +178,30 @@ def get_job(job_id: str) -> dict | None:
         return _jobs.get(job_id)
 
 
+def delete_job(job_id: str) -> bool:
+    """Remove a finished job from memory and delete its outbox directory.
+
+    Returns True if the job was found and removed, False if it does not exist
+    or is not in a terminal state (complete/error). Only terminal jobs may be
+    deleted; queued/processing jobs are rejected so an in-flight pipeline run
+    is not interrupted mid-write.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            return False
+        if job.get("status") not in ("complete", "error"):
+            return False
+        del _jobs[job_id]
+
+    if _outbox is not None:
+        job_dir = _outbox / job_id
+        if job_dir.is_dir():
+            shutil.rmtree(job_dir)
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Per-PDF pipeline
 # ---------------------------------------------------------------------------
