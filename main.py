@@ -30,6 +30,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from proofreader import worker
@@ -239,3 +240,10 @@ async def health() -> JSONResponse:
     Limitations (observability gap).
     """
     return JSONResponse({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Static UI — mounted last so all API routes above take precedence
+# ---------------------------------------------------------------------------
+
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="ui")

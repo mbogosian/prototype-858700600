@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProofReader — TTB Label Compliance</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: sans-serif;
+  font-size: 14px;
+  color: #222;
+  background: #f5f5f5;
+}
+
+/* ── Layout ── */
+.page { max-width: 960px; margin: 0 auto; padding: 0 1em 2em; }
+
+header {
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 1.5em;
+}
+header .inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0.75em 1em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75em;
+}
+header h1 { font-size: 1.2em; }
+header p  { font-size: 0.85em; color: #666; }
+
+/* ── Upload zone ── */
+.upload-zone {
+  border: 2px dashed #bbb;
+  border-radius: 6px;
+  padding: 2em 1em;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+  margin-bottom: 1.5em;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+.upload-zone:hover,
+.upload-zone.drag-over { border-color: #0d6efd; background: #eef4ff; }
+.upload-zone strong    { font-size: 1em; }
+.upload-zone p         { font-size: 0.85em; color: #777; margin-top: 0.35em; }
+.upload-zone input     { display: none; }
+
+/* ── Job list ── */
+.section-head {
+  font-size: 0.95em;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 0.6em;
+}
+.job-list   { display: flex; flex-direction: column; gap: 0.5em; }
+.empty-note { color: #888; font-size: 0.9em; text-align: center; padding: 2em 0; }
+
+.job-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  padding: 0.6em 0.75em;
+}
+.job-thumb {
+  width: 50px;
+  min-width: 50px;
+  height: 67px;
+  object-fit: contain;
+  border: 1px solid #e0e0e0;
+  border-radius: 2px;
+  background: #fafafa;
+}
+.job-thumb-placeholder {
+  width: 50px;
+  min-width: 50px;
+  height: 67px;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4em;
+  color: #ccc;
+}
+.job-meta       { flex: 1; min-width: 0; }
+.job-filename   { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-id         { font-size: 0.78em; color: #888; font-family: monospace; margin-top: 0.1em; }
+.job-actions    { display: flex; align-items: center; gap: 0.5em; flex-shrink: 0; }
+
+/* ── Verdict badges ── (same palette as report templates) ── */
+.badge {
+  display: inline-block;
+  padding: 0.2em 0.55em;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.badge-PASS,          .badge-EXEMPT        { background: #d4edda; color: #155724; }
+.badge-WARN,          .badge-ABSENT        { background: #fff3cd; color: #856404; }
+.badge-FAIL,          .badge-ERROR         { background: #f8d7da; color: #721c24; }
+.badge-INDETERMINATE, .badge-queued        { background: #e2e3e5; color: #383d41; }
+.badge-processing {
+  background: #e2e3e5;
+  color: #383d41;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+/* ── Spinner ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 2px solid #bbb;
+  border-top-color: #555;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Report button ── */
+.btn-report {
+  padding: 0.25em 0.65em;
+  font-size: 0.82em;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  background: #fff;
+  color: #222;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-report:hover { background: #f0f0f0; text-decoration: none; }
+
+/* ── Log panel ── */
+.log-panel {
+  margin-top: 1.5em;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #fff;
+}
+.log-toggle {
+  padding: 0.55em 0.75em;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: #444;
+}
+.log-toggle:hover { background: #fafafa; }
+.log-body {
+  height: 180px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.78em;
+  line-height: 1.5;
+  padding: 0.4em 0.6em;
+  background: #1e1e1e;
+  color: #ccc;
+}
+.log-body.collapsed { display: none; }
+.log-line { white-space: pre-wrap; word-break: break-all; }
+.log-line.WARN  { color: #e5c07b; }
+.log-line.ERROR { color: #e06c75; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <h1>ProofReader</h1>
+    <p>TTB Form 5100.31 — Label Compliance Pre-Screener</p>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- Upload zone -->
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" id="fileInput" multiple accept=".pdf">
+    <strong>Drop PDF files here</strong> or click to browse
+    <p>Accepts TTB Form 5100.31 submissions. Multiple files at once are fine.</p>
+  </div>
+
+  <!-- Job list -->
+  <div class="section-head" id="jobsHeading">Jobs</div>
+  <div class="job-list" id="jobList">
+    <div class="empty-note" id="emptyNote">No jobs yet. Upload a PDF to get started.</div>
+  </div>
+
+  <!-- Log panel -->
+  <div class="log-panel">
+    <div class="log-toggle" id="logToggle">
+      <span>Live Log</span><span id="logArrow">▼</span>
+    </div>
+    <div class="log-body" id="logBody"></div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+// job_id → job object; Map preserves insertion order
+const jobs = new Map();
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function verdictBadge(job) {
+  if (job.status === "queued")
+    return `<span class="badge badge-queued">QUEUED</span>`;
+  if (job.status === "processing")
+    return `<span class="badge badge-processing"><span class="spinner"></span>PROCESSING</span>`;
+  if (job.status === "error" && !job.verdict)
+    return `<span class="badge badge-ERROR">ERROR</span>`;
+  if (job.verdict)
+    return `<span class="badge badge-${esc(job.verdict)}">${esc(job.verdict)}</span>`;
+  return `<span class="badge badge-queued">—</span>`;
+}
+
+function reportLink(job) {
+  if (job.status !== "complete") return "";
+  return `<a class="btn-report" href="/results/${esc(job.job_id)}/report.html" target="_blank">Report ↗</a>`;
+}
+
+function cardHtml(job) {
+  return `<div class="job-card" id="card-${esc(job.job_id)}">
+  <img class="job-thumb"
+       src="/results/${esc(job.job_id)}/thumbnail.jpg"
+       onerror="this.style.display='none';this.nextSibling.style.display='flex';"
+       alt="">
+  <div class="job-thumb-placeholder" style="display:none">📄</div>
+  <div class="job-meta">
+    <div class="job-filename" title="${esc(job.original_filename ?? job.job_id)}">${esc(job.original_filename ?? job.job_id)}</div>
+    <div class="job-id">${esc(job.job_id)}</div>
+  </div>
+  <div class="job-actions">
+    <span id="badge-${esc(job.job_id)}">${verdictBadge(job)}</span>
+    <span id="action-${esc(job.job_id)}">${reportLink(job)}</span>
+  </div>
+</div>`;
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+
+function renderAll() {
+  const list    = document.getElementById("jobList");
+  const empty   = document.getElementById("emptyNote");
+  const heading = document.getElementById("jobsHeading");
+
+  if (jobs.size === 0) {
+    list.innerHTML = "";
+    list.appendChild(empty);
+    heading.textContent = "Jobs";
+    return;
+  }
+
+  empty.remove();
+  // Newest first: reverse insertion order
+  list.innerHTML = [...jobs.values()].reverse().map(cardHtml).join("");
+  heading.textContent = `Jobs (${jobs.size})`;
+}
+
+function updateCard(job_id) {
+  const job    = jobs.get(job_id);
+  const badge  = document.getElementById(`badge-${job_id}`);
+  const action = document.getElementById(`action-${job_id}`);
+  if (!job || !badge) { renderAll(); return; }
+  badge.innerHTML  = verdictBadge(job);
+  action.innerHTML = reportLink(job);
+}
+
+// ── Data ─────────────────────────────────────────────────────────────────────
+
+async function loadJobs() {
+  try {
+    const resp = await fetch("/results");
+    if (!resp.ok) return;
+    const list = await resp.json();
+    jobs.clear();
+    for (const j of list) jobs.set(j.job_id, j);
+    renderAll();
+  } catch (_) { /* server not yet ready */ }
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+
+async function uploadFiles(files) {
+  const pdfs = [...files].filter(f => f.name.toLowerCase().endsWith(".pdf"));
+  if (!pdfs.length) return;
+
+  const form = new FormData();
+  pdfs.forEach(f => form.append("files", f));
+
+  let results;
+  try {
+    const resp = await fetch("/upload", { method: "POST", body: form });
+    if (!resp.ok) return;
+    results = await resp.json();
+  } catch (_) { return; }
+
+  for (const r of results) {
+    if (r.job_id) {
+      jobs.set(r.job_id, {
+        job_id: r.job_id,
+        status: r.status ?? "queued",
+        original_filename: r.filename,
+        verdict: null,
+      });
+    }
+  }
+  renderAll();
+}
+
+const zone      = document.getElementById("uploadZone");
+const fileInput = document.getElementById("fileInput");
+
+zone.addEventListener("click",    ()  => fileInput.click());
+fileInput.addEventListener("change", e => { uploadFiles(e.target.files); fileInput.value = ""; });
+zone.addEventListener("dragover",  e  => { e.preventDefault(); zone.classList.add("drag-over"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+zone.addEventListener("drop", e => {
+  e.preventDefault();
+  zone.classList.remove("drag-over");
+  uploadFiles(e.dataTransfer.files);
+});
+
+// ── SSE: job completion events ────────────────────────────────────────────────
+
+function connectEvents() {
+  const es = new EventSource("/events");
+  es.onmessage = e => {
+    const data = JSON.parse(e.data);
+    const job  = jobs.get(data.job_id);
+    if (job) {
+      job.status  = "complete";
+      job.verdict = data.verdict;
+      updateCard(data.job_id);
+    } else {
+      // Arrived via watchdog inbox drop — not in our local state yet
+      loadJobs();
+    }
+  };
+  es.onerror = () => { es.close(); setTimeout(connectEvents, 3000); };
+}
+
+// ── SSE: log stream ───────────────────────────────────────────────────────────
+
+const logBody = document.getElementById("logBody");
+let atBottom  = true;
+
+logBody.addEventListener("scroll", () => {
+  atBottom = logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - 24;
+});
+
+function appendLog(line) {
+  const div = document.createElement("div");
+  div.className = "log-line" +
+    (/ WARNING /.test(line) ? " WARN" : / ERROR /.test(line) ? " ERROR" : "");
+  div.textContent = line;
+  logBody.appendChild(div);
+  if (atBottom) logBody.scrollTop = logBody.scrollHeight;
+  // Keep the last 2 000 lines to avoid unbounded growth
+  while (logBody.children.length > 2000) logBody.removeChild(logBody.firstChild);
+}
+
+function connectLogs() {
+  const es = new EventSource("/logs");
+  es.onmessage = e => appendLog(e.data);
+  es.onerror   = () => { es.close(); setTimeout(connectLogs, 3000); };
+}
+
+// ── Log toggle ────────────────────────────────────────────────────────────────
+
+document.getElementById("logToggle").addEventListener("click", () => {
+  const collapsed = logBody.classList.toggle("collapsed");
+  document.getElementById("logArrow").textContent = collapsed ? "▶" : "▼";
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+loadJobs().then(() => {
+  connectEvents();
+  connectLogs();
+});
+</script>
+</body>
+</html>
