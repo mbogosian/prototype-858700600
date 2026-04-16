@@ -202,7 +202,8 @@ def _process(pdf_path: Path, job_id: str, outbox: Path) -> None:
             job_state = _jobs.get(job_id, {})
             logs = list(job_state.get("logs", []))
             original_filename = job_state.get("original_filename")
-        report.render_terminal(job_id, page1, job_dir, logs, original_filename)
+            submitted_at = job_state.get("submitted_at")
+        report.render_terminal(job_id, page1, job_dir, logs, original_filename, submitted_at)
         shutil.move(str(pdf_path), job_dir / "original.pdf")
         pdf_path.with_suffix(".json").unlink(missing_ok=True)
         _set_job(job_id, status="complete", verdict=Verdict.INDETERMINATE.name)
@@ -235,7 +236,8 @@ def _process(pdf_path: Path, job_id: str, outbox: Path) -> None:
         job_state = _jobs.get(job_id, {})
         logs = list(job_state.get("logs", []))
         original_filename = job_state.get("original_filename")
-    report.render(job_id, page1, annotated_zone, findings, job_dir, logs, original_filename)
+        submitted_at = job_state.get("submitted_at")
+    report.render(job_id, page1, annotated_zone, findings, job_dir, logs, original_filename, submitted_at)
     shutil.move(str(pdf_path), job_dir / "original.pdf")
     pdf_path.with_suffix(".json").unlink(missing_ok=True)
     _set_job(job_id, status="complete", verdict=verdict)
@@ -424,6 +426,39 @@ def start(
         )
         logger.info("Re-queuing leftover %s as job %s", path.name, job_id)
         _queue(path, job_id)
+
+    # Re-inflate completed job state from the outbox. Any subdirectory that
+    # contains both report.html and findings.json represents a finished job.
+    # We skip jobs already registered by the inbox re-queue loop above (i.e.
+    # a job that somehow has both an inbox PDF and an outbox directory, which
+    # should not happen in normal operation but is safe to guard against).
+    for job_dir in sorted(outbox.iterdir()):
+        if not job_dir.is_dir():
+            continue
+        findings_path = job_dir / "findings.json"
+        report_path = job_dir / "report.html"
+        if not (findings_path.exists() and report_path.exists()):
+            continue
+        job_id = job_dir.name
+        with _jobs_lock:
+            if job_id in _jobs:
+                continue
+        try:
+            meta = json.loads(findings_path.read_text())
+        except Exception:
+            logger.warning("Outbox re-inflation: could not read %s", findings_path)
+            continue
+        verdict = meta.get("verdict", Verdict.INDETERMINATE.name)
+        original_filename = meta.get("original_filename")
+        submitted_at = meta.get("submitted_at")
+        _set_job(
+            job_id,
+            status="complete",
+            verdict=verdict,
+            original_filename=original_filename,
+            submitted_at=submitted_at,
+        )
+        logger.debug("Re-inflated completed job %s (verdict=%s)", job_id, verdict)
 
     # Start the watchdog only after all pre-existing files are registered.
     # Files dropped into inbox between the glob above and observer.start() here

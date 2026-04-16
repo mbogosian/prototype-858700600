@@ -34,6 +34,26 @@ dev = [
     "ty>=0.0.1a6",
 ]
 
+[tool.coverage.run]
+source = ["proofreader"]
+branch = true
+
+[tool.pytest.ini_options]
+# testpaths includes both tests/ (for test_*.py files) and proofreader/ (for
+# doctest collection via --doctest-modules). No doctests exist yet; this ensures
+# any that are added get run automatically without further config changes.
+testpaths = ["tests", "proofreader"]
+# -m "not integration" is the default so that `uv run pytest` is always safe:
+# integration tests load PaddleOCR (~2 GB RAM) and require sample PDFs.
+# To run integration tests: uv run pytest -m integration
+# To run everything:        uv run pytest -m ""
+addopts = "--doctest-modules --import-mode=importlib -m 'not integration'"
+doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
+# Register custom marks so -m filtering works without warnings.
+markers = [
+    "integration: requires PaddleOCR initialisation and sample PDFs in tests/sample_applications/",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
@@ -56,22 +76,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B"]  # bugbear rules are noisy in test helpers
-
-[tool.pytest.ini_options]
-# testpaths includes both tests/ (for test_*.py files) and proofreader/ (for
-# doctest collection via --doctest-modules). No doctests exist yet; this ensures
-# any that are added get run automatically without further config changes.
-testpaths = ["tests", "proofreader"]
-# -m "not integration" is the default so that `uv run pytest` is always safe:
-# integration tests load PaddleOCR (~2 GB RAM) and require sample PDFs.
-# To run integration tests: uv run pytest -m integration
-# To run everything:        uv run pytest -m ""
-addopts = "--doctest-modules --import-mode=importlib -m 'not integration'"
-doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
-# Register custom marks so -m filtering works without warnings.
-markers = [
-    "integration: requires PaddleOCR initialisation and sample PDFs in tests/sample_applications/",
-]
 
 [tool.ty.environment]
 python-version = "3.11"

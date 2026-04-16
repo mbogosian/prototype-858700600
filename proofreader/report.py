@@ -51,6 +51,7 @@ def render_terminal(
     outbox_dir: Path,
     logs: list[str] | None = None,
     original_filename: str | None = None,
+    submitted_at: float | None = None,
 ) -> None:
     """Write a minimal report for a terminal extraction state.
 
@@ -63,6 +64,8 @@ def render_terminal(
     findings_data = {
         "job_id": job_id,
         "verdict": Verdict.INDETERMINATE.name,
+        "original_filename": original_filename,
+        "submitted_at": submitted_at,
         "reason": reason_name,
         "reason_description": reason_desc,
         "fields": [],
@@ -89,11 +92,14 @@ def render(
     outbox_dir: Path,
     logs: list[str] | None = None,
     original_filename: str | None = None,
+    submitted_at: float | None = None,
 ) -> None:
     """Write the full compliance report and findings JSON for a completed analysis."""
     findings_data = {
         "job_id": job_id,
         "verdict": findings.verdict.name,
+        "original_filename": original_filename,
+        "submitted_at": submitted_at,
         "product_type": page1.product_type,
         "import_indicators": findings.import_indicators,
         "fields": [
