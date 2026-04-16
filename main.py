@@ -20,6 +20,8 @@ Routes:
   GET  /events                          — SSE stream: job completion/error events
   GET  /logs                            — SSE stream: pipeline log output
   GET  /health                          — liveness probe
+  DELETE /results/{job_id}             — delete a finished job
+  POST   /results/{job_id}/requeue     — re-submit a finished job for re-processing
 """
 
 import asyncio
@@ -160,6 +162,25 @@ async def annotated(job_id: str) -> FileResponse:
 @app.get("/results/{job_id}/original.pdf")
 async def original_pdf(job_id: str) -> FileResponse:
     return FileResponse(_result_file(job_id, "original.pdf"), media_type="application/pdf")
+
+
+@app.post("/results/{job_id}/requeue")
+async def requeue_result(job_id: str) -> JSONResponse:
+    """Re-submit a finished job for re-processing.
+
+    Moves the original PDF back to the inbox and resets job state to
+    'queued'. The same job ID is reused. Returns 404 if the job does not
+    exist, 409 if it is not in a terminal state, 500 if the original PDF
+    is missing from the outbox.
+    """
+    job = worker.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.get("status") not in ("complete", "error"):
+        raise HTTPException(status_code=409, detail="job is not yet complete")
+    if not worker.requeue_job(job_id):
+        raise HTTPException(status_code=500, detail="requeue failed: original PDF not found")
+    return JSONResponse({"status": "queued", "job_id": job_id})
 
 
 @app.delete("/results/{job_id}")

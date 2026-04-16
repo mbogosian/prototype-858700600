@@ -82,3 +82,49 @@ def test_delete_does_not_call_delete_job_for_non_terminal(client: TestClient) ->
     with patch("main.worker.delete_job") as mock_del:
         client.delete("/results/q002")
     mock_del.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# POST /results/{job_id}/requeue
+# ---------------------------------------------------------------------------
+
+
+def test_requeue_complete_job_returns_200(client: TestClient) -> None:
+    worker._set_job("rqa001", status="complete", verdict="PASS")
+    with patch("main.worker.requeue_job", return_value=True) as mock_rq:
+        resp = client.post("/results/rqa001/requeue")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "queued", "job_id": "rqa001"}
+    mock_rq.assert_called_once_with("rqa001")
+
+
+def test_requeue_error_job_returns_200(client: TestClient) -> None:
+    worker._set_job("rqa002", status="error", verdict="ERROR")
+    with patch("main.worker.requeue_job", return_value=True):
+        resp = client.post("/results/rqa002/requeue")
+    assert resp.status_code == 200
+
+
+def test_requeue_unknown_job_returns_404(client: TestClient) -> None:
+    resp = client.post("/results/doesnotexist/requeue")
+    assert resp.status_code == 404
+
+
+def test_requeue_queued_job_returns_409(client: TestClient) -> None:
+    worker._set_job("rqa003", status="queued")
+    resp = client.post("/results/rqa003/requeue")
+    assert resp.status_code == 409
+
+
+def test_requeue_processing_job_returns_409(client: TestClient) -> None:
+    worker._set_job("rqa004", status="processing")
+    resp = client.post("/results/rqa004/requeue")
+    assert resp.status_code == 409
+
+
+def test_requeue_returns_500_when_requeue_job_fails(client: TestClient) -> None:
+    """requeue_job() returning False (e.g. original PDF missing) surfaces as 500."""
+    worker._set_job("rqa005", status="complete", verdict="PASS")
+    with patch("main.worker.requeue_job", return_value=False):
+        resp = client.post("/results/rqa005/requeue")
+    assert resp.status_code == 500

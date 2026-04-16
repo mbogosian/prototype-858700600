@@ -527,3 +527,121 @@ def test_delete_job_handles_missing_outbox_dir(set_outbox: Path) -> None:
     _set_job("del007", status="complete", verdict="PASS")
     # Intentionally no directory created for del007
     assert worker.delete_job("del007") is True
+
+
+# ---------------------------------------------------------------------------
+# requeue_job()
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def set_inbox_and_outbox(tmp_path: Path):
+    """Temporarily point worker._inbox and _outbox at subdirs of tmp_path."""
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    inbox.mkdir()
+    outbox.mkdir()
+    old_inbox, old_outbox = worker._inbox, worker._outbox
+    worker._inbox = inbox
+    worker._outbox = outbox
+    yield inbox, outbox
+    worker._inbox = old_inbox
+    worker._outbox = old_outbox
+
+
+def _make_complete_job_with_pdf(outbox: Path, job_id: str) -> None:
+    """Create a realistic completed outbox dir with original.pdf and output files."""
+    job_dir = outbox / job_id
+    job_dir.mkdir(parents=True)
+    (job_dir / "original.pdf").write_bytes(b"%PDF fake")
+    (job_dir / "report.html").write_text("<html/>")
+    (job_dir / "findings.json").write_text("{}")
+    (job_dir / "thumbnail.jpg").write_bytes(b"JPG")
+
+
+def test_requeue_job_returns_true_for_complete(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    _make_complete_job_with_pdf(outbox, "rq001")
+    _set_job("rq001", status="complete", verdict="PASS", original_filename="label.pdf")
+    with patch("proofreader.worker._queue"):
+        assert worker.requeue_job("rq001") is True
+
+
+def test_requeue_job_returns_true_for_error(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    _make_complete_job_with_pdf(outbox, "rq002")
+    _set_job("rq002", status="error", verdict="ERROR", original_filename="label.pdf")
+    with patch("proofreader.worker._queue"):
+        assert worker.requeue_job("rq002") is True
+
+
+def test_requeue_job_returns_false_for_unknown() -> None:
+    assert worker.requeue_job("doesnotexist") is False
+
+
+def test_requeue_job_returns_false_for_queued() -> None:
+    _set_job("rq003", status="queued")
+    assert worker.requeue_job("rq003") is False
+
+
+def test_requeue_job_returns_false_for_processing() -> None:
+    _set_job("rq004", status="processing")
+    assert worker.requeue_job("rq004") is False
+
+
+def test_requeue_job_returns_false_when_original_pdf_missing(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    job_dir = outbox / "rq005"
+    job_dir.mkdir()
+    # No original.pdf
+    _set_job("rq005", status="complete", verdict="PASS")
+    assert worker.requeue_job("rq005") is False
+
+
+def test_requeue_job_moves_pdf_to_inbox(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    _make_complete_job_with_pdf(outbox, "rq006")
+    _set_job("rq006", status="complete", verdict="PASS", original_filename="label.pdf")
+    with patch("proofreader.worker._queue"):
+        worker.requeue_job("rq006")
+    assert (inbox / "rq006.pdf").exists()
+    assert not (outbox / "rq006" / "original.pdf").exists()
+
+
+def test_requeue_job_deletes_processed_outputs(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    _make_complete_job_with_pdf(outbox, "rq007")
+    _set_job("rq007", status="complete", verdict="PASS", original_filename="label.pdf")
+    with patch("proofreader.worker._queue"):
+        worker.requeue_job("rq007")
+    job_dir = outbox / "rq007"
+    assert not (job_dir / "report.html").exists()
+    assert not (job_dir / "findings.json").exists()
+    assert not (job_dir / "thumbnail.jpg").exists()
+
+
+def test_requeue_job_resets_state_to_queued(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    _make_complete_job_with_pdf(outbox, "rq008")
+    _set_job("rq008", status="complete", verdict="PASS", original_filename="label.pdf",
+             logs=["old log line"])
+    with patch("proofreader.worker._queue"):
+        worker.requeue_job("rq008")
+    job = worker.get_job("rq008")
+    assert job["status"] == "queued"
+    assert job["verdict"] is None
+    assert job["logs"] == []
+
+
+def test_requeue_job_writes_sidecar(set_inbox_and_outbox) -> None:
+    inbox, outbox = set_inbox_and_outbox
+    _make_complete_job_with_pdf(outbox, "rq009")
+    _set_job("rq009", status="complete", verdict="PASS", original_filename="my_label.pdf")
+    with patch("proofreader.worker._queue"):
+        worker.requeue_job("rq009")
+    sidecar = inbox / "rq009.json"
+    assert sidecar.exists()
+    import json
+    meta = json.loads(sidecar.read_text())
+    assert meta["job_id"] == "rq009"
+    assert meta["original_filename"] == "my_label.pdf"

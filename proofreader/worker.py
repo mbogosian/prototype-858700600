@@ -214,6 +214,55 @@ def delete_job(job_id: str) -> bool:
     return True
 
 
+def requeue_job(job_id: str) -> bool:
+    """Move a finished job back to the inbox for re-processing.
+
+    Reads original.pdf from the outbox, moves it back to the inbox,
+    deletes the processed outputs (report.html, findings.json,
+    thumbnail.jpg), resets in-memory job state to 'queued', and
+    re-submits to the executor. The same job ID is reused so the UI
+    card updates in place rather than being replaced.
+
+    Returns True on success, False if the job does not exist, is not in
+    a terminal state, or the original PDF is missing from the outbox.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            return False
+        if job.get("status") not in ("complete", "error"):
+            return False
+        original_filename = job.get("original_filename") or f"{job_id}.pdf"
+
+    if _inbox is None or _outbox is None:
+        return False
+
+    original_pdf = _outbox / job_id / "original.pdf"
+    if not original_pdf.exists():
+        return False
+
+    inbox_path = _inbox / f"{job_id}.pdf"
+    shutil.move(str(original_pdf), inbox_path)
+
+    for name in ("report.html", "findings.json", "thumbnail.jpg"):
+        (_outbox / job_id / name).unlink(missing_ok=True)
+
+    _write_sidecar(inbox_path, job_id, original_filename)
+
+    _set_job(
+        job_id,
+        status="queued",
+        original_filename=original_filename,
+        verdict=None,
+        submitted_at=time.time(),
+        logs=[],
+    )
+
+    logger.info("Re-queued job %s (%r)", job_id, original_filename)
+    _queue(inbox_path, job_id)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Per-PDF pipeline
 # ---------------------------------------------------------------------------

@@ -72,6 +72,7 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 }
 @media (max-width: 680px) {
   .panes { grid-template-columns: 1fr; }
+  .pane-cards { height: auto; max-height: 420px; }
 }
 
 .pane {
@@ -111,8 +112,7 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 }
 .pane-search:focus { background: #fff; border-bottom-color: #0d6efd; }
 .pane-cards {
-  min-height: 60px;
-  max-height: 420px;
+  height: 315px;   /* ~4.5 cards (≈70 px/card at 14 px base) */
   overflow-y: auto;
 }
 
@@ -154,10 +154,13 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 .job-meta       { flex: 1; min-width: 0; }
 .job-filename   { font-size: 0.85em; font-weight: 500; white-space: nowrap;
                   overflow: hidden; text-overflow: ellipsis; }
+.job-status-row { margin-top: 0.2em; display: flex; align-items: center;
+                  gap: 0.4em; min-height: 1.4em; }
 .job-id         { font-size: 0.72em; color: #aaa; font-family: monospace;
-                  margin-top: 0.1em; white-space: nowrap; }
+                  white-space: nowrap; }
 .job-actions    { margin-top: 0.35em; display: flex; align-items: center;
-                  gap: 0.4em; flex-wrap: wrap; }
+                  justify-content: space-between; gap: 0.4em; }
+.job-actions-right { display: flex; align-items: center; gap: 0.4em; }
 
 /* ── Badges ── (same palette as report templates) ── */
 .badge {
@@ -202,7 +205,6 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
   line-height: inherit;
   min-width: 5em;         /* wide enough for "Confirm"; prevents layout shift */
   text-align: center;
-  margin-left: auto;      /* right-justify within the flex job-actions row */
 }
 .btn-delete:hover { background: #fff0f0; border-color: #e0a0a0; color: #c00; }
 .btn-delete-confirm {
@@ -212,6 +214,29 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
   font-weight: 600;
 }
 .btn-delete-confirm:hover { background: #dc3545; color: #fff; }
+
+.btn-rerun {
+  display: inline-block;
+  padding: 0.15em 0.5em;
+  font-size: 0.75em;
+  border: 1px solid #b0c8e0;
+  border-radius: 3px;
+  background: #fff;
+  color: #2060a0;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: inherit;
+  min-width: 5em;
+  text-align: center;
+}
+.btn-rerun:hover { background: #f0f4ff; border-color: #6090c0; color: #1040a0; }
+.btn-rerun-confirm {
+  background: #f0f4ff;
+  border-color: #2060a0;
+  color: #2060a0;
+  font-weight: 600;
+}
+.btn-rerun-confirm:hover { background: #2060a0; color: #fff; }
 
 .pane-empty {
   padding: 1em 0.65em;
@@ -357,6 +382,7 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 const jobs          = new Map();   // job_id → job object
 const myJobs        = new Set();   // job_ids submitted this session (for notifications)
 const pendingDelete = new Map();   // job_id → revert-timer id (two-state delete button)
+const pendingRerun  = new Map();   // job_id → revert-timer id (two-state re-run button)
 const queries       = { queued: "", progress: "", done: "" };
 
 // ── Pane definitions ──────────────────────────────────────────────────────────
@@ -404,6 +430,15 @@ function reportLink(job) {
   return `<a class="btn-report" href="/results/${esc(job.job_id)}/report.html" target="_blank">Report ↗</a>`;
 }
 
+function rerunButton(job) {
+  if (job.status !== "complete" && job.status !== "error") return "";
+  const id = esc(job.job_id);
+  if (pendingRerun.has(job.job_id)) {
+    return `<button class="btn-rerun btn-rerun-confirm" data-job-id="${id}" data-confirm="true">Confirm</button>`;
+  }
+  return `<button class="btn-rerun" data-job-id="${id}" data-confirm="false">Re-run</button>`;
+}
+
 function deleteButton(job) {
   if (job.status !== "complete" && job.status !== "error") return "";
   const id = esc(job.job_id);
@@ -422,9 +457,11 @@ function cardHtml(job) {
   <div class="job-thumb-placeholder" style="display:none">📄</div>
   <div class="job-meta">
     <div class="job-filename" title="${fn}">${fn}</div>
-    <div class="job-id">${id}</div>
+    <div class="job-status-row">
+      ${verdictBadge(job)}<span class="job-id">${id}</span>
+    </div>
     <div class="job-actions">
-      ${verdictBadge(job)}${reportLink(job)}${deleteButton(job)}
+      ${reportLink(job)}<span class="job-actions-right">${rerunButton(job)}${deleteButton(job)}</span>
     </div>
   </div>
 </div>`;
@@ -683,6 +720,53 @@ document.addEventListener("mouseover", e => {
 
 document.addEventListener("mouseout", e => {
   if (e.target.closest(".job-thumb")) hideThumbPreview();
+});
+
+// ── Re-run ────────────────────────────────────────────────────────────────────
+
+async function performRerun(jobId) {
+  try {
+    const resp = await fetch(`/results/${encodeURIComponent(jobId)}/requeue`, { method: "POST" });
+    if (resp.ok) {
+      // Optimistically reset the card to queued state; SSE will drive it forward
+      const job = jobs.get(jobId);
+      if (job) {
+        job.status = "queued";
+        job.verdict = null;
+        renderAll();
+      }
+    }
+  } catch (_) { /* server unreachable; leave card in place */ }
+}
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".btn-rerun");
+  if (!btn) return;
+  const jobId = btn.dataset.jobId;
+  if (btn.dataset.confirm !== "true") {
+    btn.dataset.confirm = "true";
+    btn.textContent = "Confirm";
+    btn.classList.add("btn-rerun-confirm");
+    const timer = setTimeout(() => {
+      pendingRerun.delete(jobId);
+      renderAll();
+    }, 2000);
+    pendingRerun.set(jobId, timer);
+  } else {
+    clearTimeout(pendingRerun.get(jobId));
+    pendingRerun.delete(jobId);
+    performRerun(jobId);
+  }
+});
+
+document.addEventListener("mouseout", e => {
+  const btn = e.target.closest(".btn-rerun");
+  if (!btn || btn.dataset.confirm !== "true") return;
+  if (btn.contains(e.relatedTarget)) return;
+  const jobId = btn.dataset.jobId;
+  clearTimeout(pendingRerun.get(jobId));
+  pendingRerun.delete(jobId);
+  renderAll();
 });
 
 // ── Delete (two-state: Delete → Confirm → execute) ───────────────────────────
