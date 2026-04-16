@@ -136,7 +136,11 @@ _FIELD_DESCRIPTIONS: dict[str, str] = {
         "(2) Consumption of alcoholic beverages impairs your ability to drive a car or "
         "operate machinery, and may cause health problems.' "
         "Format requirements: 'GOVERNMENT WARNING:' must appear in ALL CAPITAL LETTERS "
-        "and BOLD type. The remainder of the statement must NOT be bold. "
+        "and in visibly heavier (bold) type than the body of the warning statement. "
+        "Use relative weight: if 'GOVERNMENT WARNING:' is clearly heavier than the surrounding "
+        "warning text, that satisfies the requirement. If it is clearly the same weight or lighter, "
+        "that is FAIL. If image resolution or compression makes the weight difference genuinely "
+        "ambiguous, return WARN — do not default to FAIL. "
         "The statement must appear on a contrasting background, separate from other text."
     ),
     "country_of_origin": (
@@ -256,9 +260,10 @@ Verdict definitions:
 
 Rules:
 - If import_indicators is true, add a "country_of_origin" entry to the fields list.
-- For the government_warning field: any deviation from the exact required text is FAIL;
-  if "GOVERNMENT WARNING:" is not in all-caps bold, that is FAIL even if the text is correct.
-  If you cannot assess bold formatting from the image, note it as WARN with an explanation.
+- For the government_warning field: any deviation from the exact required text is FAIL.
+  For bold formatting: FAIL only if "GOVERNMENT WARNING:" is clearly the same weight or lighter
+  than the body of the warning; WARN if weight difference is ambiguous from the image quality.
+  Do not default to FAIL when bold status is uncertain — prefer WARN.
 - For alcohol_content: using "ABV" alone (without "Alc." and "Vol.") is FAIL.
 - Respond ONLY with the JSON object — no explanation, no markdown fences.
 """
