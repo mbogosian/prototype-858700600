@@ -147,9 +147,10 @@ _FIELD_DESCRIPTIONS: dict[str, str] = {
         "Alcohol content statement. IMPORTANT FORMAT RULE: the abbreviation 'ABV' alone "
         "is NOT acceptable under TTB regulations. Acceptable forms include: "
         "'Alc. X% by Vol.', 'Alcohol X% by volume', 'X% Alc./Vol.', 'Alc. X% By Vol.' "
-        "Note: for wine, alcohol content is mandatory only if >14%; optional for 7-14% "
-        "if 'table wine' or 'light wine' appears on the brand label. "
-        "For distilled spirits, alcohol content is always mandatory."
+        "For wine: mandatory only if >14%; optional for 7–14% with 'table wine' or 'light wine' on brand label. "
+        "For distilled spirits: always mandatory. "
+        "For malt beverages: mandatory only if the product contains added non-beverage alcohol or flavors "
+        "(27 CFR §7.71); if absent, return ABSENT — not FAIL."
     ),
     "sulfite_declaration": (
         "Sulfite declaration ('Contains sulfites' or 'Contains [specific sulfite]'). "
