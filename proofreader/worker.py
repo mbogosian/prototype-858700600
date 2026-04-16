@@ -247,7 +247,7 @@ def _save_thumbnail(page1, job_dir: Path) -> None:
     if page1.page1_image is None:
         return
     thumb = page1.page1_image.copy()
-    thumb.thumbnail((300, 400))
+    thumb.thumbnail((600, 800))
     thumb.save(job_dir / "thumbnail.jpg", format="JPEG", quality=80)
 
 

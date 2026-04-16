@@ -242,6 +242,26 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 .log-line           { white-space: pre-wrap; word-break: break-all; }
 .log-line.WARN      { color: #e5c07b; }
 .log-line.ERROR     { color: #e06c75; }
+
+/* ── Thumbnail hover preview ── */
+#thumb-preview {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;       /* transparent to mouse events; doesn't trigger mouseout on img */
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 4px;
+  max-width: 280px;
+}
+#thumb-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 2px;
+}
 </style>
 </head>
 <body>
@@ -290,6 +310,9 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
       <div class="pane-cards" id="cards-done"></div>
     </div>
   </div>
+
+  <!-- Thumbnail hover preview (global, positioned via JS) -->
+  <div id="thumb-preview"><img src="" alt=""></div>
 
   <!-- Log panel -->
   <div class="log-panel">
@@ -581,6 +604,51 @@ function connectLogs() {
 document.getElementById("logToggle").addEventListener("click", () => {
   const collapsed = logBody.classList.toggle("collapsed");
   document.getElementById("logArrow").textContent = collapsed ? "▶" : "▼";
+});
+
+// ── Thumbnail hover preview ───────────────────────────────────────────────────
+
+const thumbPreview     = document.getElementById("thumb-preview");
+const thumbPreviewImg  = thumbPreview.querySelector("img");
+let   thumbHoverTimer  = null;
+
+function showThumbPreview(img) {
+  thumbPreviewImg.src = img.src;
+  thumbPreview.style.display = "block";
+
+  const rect   = img.getBoundingClientRect();
+  const pw     = thumbPreview.offsetWidth  || 288;  // fallback before layout
+  const ph     = thumbPreview.offsetHeight || 200;
+  const gap    = 10;
+
+  // Prefer right of the element; fall back to left if viewport too narrow
+  let left = rect.right + gap;
+  if (left + pw > window.innerWidth - 8) left = rect.left - pw - gap;
+  left = Math.max(8, left);
+
+  // Align top with the element; clamp so preview stays within viewport
+  let top = rect.top;
+  top = Math.max(8, Math.min(top, window.innerHeight - ph - 8));
+
+  thumbPreview.style.left = left + "px";
+  thumbPreview.style.top  = top  + "px";
+}
+
+function hideThumbPreview() {
+  clearTimeout(thumbHoverTimer);
+  thumbPreview.style.display = "none";
+}
+
+// Event delegation: attach once to document rather than to each re-rendered card
+document.addEventListener("mouseover", e => {
+  const img = e.target.closest(".job-thumb");
+  if (!img || !img.naturalWidth) return;   // skip placeholder-replaced images
+  clearTimeout(thumbHoverTimer);
+  thumbHoverTimer = setTimeout(() => showThumbPreview(img), 350);
+});
+
+document.addEventListener("mouseout", e => {
+  if (e.target.closest(".job-thumb")) hideThumbPreview();
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
