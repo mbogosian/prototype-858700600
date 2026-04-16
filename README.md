@@ -13,11 +13,15 @@ Much of this work is mechanical: confirming that the government warning statemen
 **Input:** A scanned raster PDF of a completed TTB Form F 5100.31 (single application).
 
 **Output:** A web-based agent interface providing:
-- Upload of single or batch PDFs; background processing with live status
-- Browser notifications when submitted items complete
-- Master list of all processed applications with form thumbnail, product type, verdict badge, and timestamp
+- Upload of single or batch PDFs via drag-and-drop or file picker; background processing with live status
+- Three-pane job list (Queued / In Progress / Done) with per-pane search filter and automatic sort (oldest-first for queued, newest-first elsewhere)
+- Page-1 thumbnail on each job card; hover to enlarge after 350 ms
+- Verdict badges (PASS / WARN / FAIL / INDETERMINATE / ERROR) with direct link to the HTML report
+- Delete button on finished cards with a two-state confirm flow (Delete → Confirm within 2 s, or cursor-leave to cancel); deletes both the in-memory record and all outbox files
+- SSE-based live connection status indicator; automatic reconnection on drop
+- Browser notifications when the user's own uploads complete (opt-in via Notifications API)
 - Per-application HTML recommendation report (downloadable), annotated label image, and JSON findings
-- Streaming log window with filter
+- Streaming log window with filter and auto-scroll
 
 ---
 
@@ -78,7 +82,7 @@ The web UI is served at `http://localhost:8000`. Drop PDFs into the inbox direct
     └─────────────────────┘
 ```
 
-Uploads arrive via the web UI; agents never interact with the filesystem directly. The inbox/outbox directories are internal prototype infrastructure, standing in for a proper message queue. See Production Considerations for what replaces them.
+**Important:** every box in this diagram is a thread or directory within a single OS process on a single server — not a separate machine or service. This is not a general architectural constraint, but an implementation choice for the sake of simplicity. The FastAPI server, the worker thread pool, the watchdog file watcher, the SSE log stream, the in-memory job state, and the local `inbox/`/`outbox/` filesystem are all currently tightly coupled inside one container. Because of this, `maxReplicas: 1` in the hosting configuration is an implementation constraint, not a cost preference: running two instances would give each its own isolated `_jobs` dict and its own filesystem, so uploads, state, and results would be invisible across instances. See Production Considerations for how each of these components could decompose into independent, separately-scaled services.
 
 ### Threading model
 
@@ -195,7 +199,7 @@ Form F 5100.31 contains applicant information in its upper zone (name, company, 
 - **The full page render** is retained internally for annotating output reports but is not transmitted outside the system.
 - In a production deployment, all processing should occur within the agency's existing cloud boundary (e.g., Azure), so label artwork sent to the AI API would remain within a controlled environment subject to applicable data governance requirements.
 
-**Known gap — no authentication or authorization:** The prototype has no access controls. Any user with network access to the server can submit PDFs and retrieve all results, including reports for submissions they did not make. The structural protections above are therefore contingent on network-level isolation keeping untrusted users out entirely. This must be addressed before the system is used on live data. See Production Considerations.
+**Known gap — no authentication or authorization:** The prototype has no access controls. Any user with network access to the server can submit PDFs, view all results (including reports for submissions they did not make), and delete completed jobs that other users submitted — permanently removing the files. The structural protections above are therefore contingent on network-level isolation keeping untrusted users out entirely. This must be addressed before the system is used on live data. See Production Considerations.
 
 **Known limitation — logs not available in real time for late-joining clients:** Pipeline log output is streamed live via SSE (`GET /logs`) and also captured in the completed `report.html` (in a collapsible section, up to 1000 lines). A user who connects after a job finishes can read the logs in the report. However, there is no way to follow a job's progress in real time if you did not connect before or during processing — there is no replay of the live stream.
 
@@ -361,13 +365,14 @@ _All open questions resolved. See Resolved Questions below._
 **Resolution: Web UI as the agent interface; inbox/outbox directories as the prototype's internal work queue.**
 
 Agents interact exclusively through a browser-based web application:
-- Upload single or multiple PDFs; processing happens in the background
-- Master list shows all submitted applications with form thumbnail, product type, verdict badge, and timestamp
-- SSE-based browser notifications fire when the agent's own uploads complete
-- Per-application downloadable HTML report and JSON findings
-- Streaming log window with filter
+- Upload single or multiple PDFs via drag-and-drop or file picker; processing happens in the background
+- Three-pane job list (Queued / In Progress / Done) with per-pane search filter and sort (oldest-first for queued, newest-first elsewhere); panes update live via SSE and a 5-second poll (the queued → processing transition has no SSE event)
+- Page-1 thumbnail on each card; hover to enlarge
+- SSE-based browser notifications when the agent's own uploads complete; live connection status with automatic reconnection
+- Per-application downloadable HTML report, annotated label image, and JSON findings; delete button with two-state confirm to remove finished jobs
+- Streaming log window with auto-scroll and colour coding for warnings and errors
 
-Internally, the web server writes uploaded PDFs to a watched `inbox/` directory. A watchdog process detects new arrivals and dispatches them to a configurable `ThreadPoolExecutor` worker pool. Completed output (original PDF, report, thumbnail) lands in `outbox/`. In-flight state is tracked in memory only; a restart simply re-discovers and re-processes anything remaining in inbox. This is the prototype simplification for what a production system would implement as a proper message queue (see Production Considerations).
+Internally, the web server writes uploaded PDFs to a watched `inbox/` directory. A watchdog process detects new arrivals and dispatches them to a configurable `ThreadPoolExecutor` worker pool. Completed output (original PDF, report, thumbnail, annotated image) lands in `outbox/{job_id}/`. In-memory job state is restored from `outbox/` on startup (completed jobs) and from `inbox/` (jobs that were in-flight when the server stopped, which are re-queued). This is the prototype simplification for what a production system would implement as a proper message queue (see Production Considerations).
 
 **Trade-offs:** A native desktop app (Tkinter, PyQt) would avoid the web server dependency but is harder to build well and cannot satisfy the interview's "deployed URL" deliverable. A REST API with no UI would require agents to manage their own polling and file handling. A browser-based UI served by the same FastAPI process is the simplest path that meets both the interview requirement and the real workflow need. The inbox/outbox model is honest about being a simplification — it's a direct local analog of the production queue architecture and makes the production delta obvious.
 
@@ -458,6 +463,21 @@ Actual test PDFs (scanned Form F 5100.31 submissions) should be placed in `tests
 
 The following are explicitly out of scope for the current prototype but would be required before production deployment.
 
+### Single-server to distributed decomposition
+
+The prototype bundles six distinct concerns into one process. In production each becomes an independent, separately managed and scaled service:
+
+| Prototype (single process) | Production equivalent |
+|---|---|
+| FastAPI server + static UI | Stateless web/API tier — multiple replicas behind a load balancer; UI served from a CDN |
+| `inbox/` directory + watchdog | Managed message queue (SQS, Azure Service Bus) — decouples submission rate from processing rate; survives API restarts |
+| `ThreadPoolExecutor` worker threads | Separately scaled compute tier (ECS tasks, Azure Container Apps jobs, Lambda) — workers scale independently of the API, can run on different hardware classes |
+| `_jobs` in-memory dict | Shared database (Redis, DynamoDB, RDS) — the single-process dict is invisible to any other API replica and is lost on restart |
+| `outbox/` local filesystem | Object storage (S3, Azure Blob) — durable, accessible to all API and worker replicas, not tied to any one container's ephemeral disk |
+| SSE log stream (process-local) | Log aggregation service (CloudWatch, Datadog, Azure Monitor) — structured logs with a per-submission correlation ID, queryable after the fact, not a live character stream from one process |
+
+The component boundaries in the code (`worker.py`, `pdf.py`, `vision.py`, `report.py`) are already organized around these concerns; the decomposition is a transport-layer change at each boundary, not a structural rewrite.
+
 **Work queue.** The prototype uses watched `inbox/outbox/` directories as a local stand-in for a message queue. In production, this becomes: upload → object storage (S3/Azure Blob) → queue event (SQS/Service Bus) → worker pool (ECS tasks, Lambda, or similar) → results back to object storage. The web UI and worker logic would change minimally; only the transport layer swaps.
 
 ```
@@ -485,7 +505,7 @@ The following are explicitly out of scope for the current prototype but would be
 
 **Observability, alerting, and incident investigation.** The prototype emits unstructured log lines and exposes a `/health` endpoint used only to suppress Azure's scale-to-zero timer. A production deployment would need: structured logging with a correlation ID attached to each submission (so all log lines for one PDF are retrievable together); metrics on queue depth, per-stage latency, error rates, and Anthropic API quota consumption; alerting on elevated `ERROR` verdict rates, queue backlog growth, and API failures; and a readiness probe that verifies PaddleOCR can actually run, not just that the process is alive. Without these, a silent failure mode (e.g., the Claude API returning errors for every submission) would not surface until an agent noticed the review queue filling up.
 
-**Authentication and authorization.** The prototype has no authentication or authorization controls. Any user with network access to the server can submit PDFs for processing and view all results — including reports for submissions they did not make. The broadcast log stream compounds this: any connected browser receives log lines for all in-flight jobs, including submission filenames and job IDs that belong to other users. Before deployment on live data involving PII, the system needs at minimum: authenticated access to the web UI, per-submission access control so users can only retrieve their own reports, per-session filtering of the log stream, and audit logging of who accessed what. The `LabelReader` abstraction and the outbox file layout are both natural enforcement points.
+**Authentication and authorization.** The prototype has no authentication or authorization controls. Any user with network access to the server can submit PDFs for processing, view all results (including reports for submissions they did not make), and delete completed jobs that other users submitted — permanently removing all associated files. The broadcast log stream compounds this: any connected browser receives log lines for all in-flight jobs, including submission filenames and job IDs that belong to other users. Before deployment on live data involving PII, the system needs at minimum: authenticated access to the web UI, per-submission access control so users can only retrieve and delete their own results, per-session filtering of the log stream, and audit logging of who accessed or deleted what. The `LabelReader` abstraction and the outbox file layout are both natural enforcement points.
 
 **PaddleOCR subprocess isolation.** The local OCR engine (PaddleOCR) can produce fatal signals (SIGSEGV) that terminate the worker process. The prototype serializes OCR calls to reduce concurrent-access risk, but cannot prevent all crash scenarios. A production deployment should run OCR inference in a subprocess with a timeout (e.g., via `multiprocessing`) so that a crash kills only the child, not the main worker. The `_run_ocr()` function in `pdf.py` and `annotate.py` is the natural isolation boundary.
 
@@ -521,6 +541,8 @@ ingress:
   targetPort: 8000
 ```
 
+`maxReplicas: 1` is an architectural constraint, not a cost preference. The prototype stores all job state in an in-memory dict and all output files on the container's local filesystem; a second replica would have its own isolated copy of both, making uploads, results, and log streams invisible across instances. Horizontal scaling requires first externalizing state and storage (see Production Considerations).
+
 One-time setup: Azure resource group + Container Apps environment (3 CLI commands). Deploy via Azure Container Registry or Docker Hub.
 
 ### Cold start
@@ -542,3 +564,68 @@ PaddleOCR requires approximately 1–1.5 GB RAM at inference time. The 2 GB allo
 ### Local development
 
 `docker compose up` with `inbox/` and `outbox/` as bind mounts is the standard local workflow. No Azure account required for development.
+
+---
+
+## Appendix: Theoretical Migration Path to Production
+
+The pipeline business logic (`pdf.py`, `vision.py`, `compare.py`, `annotate.py`, `report.py`) is insulated from infrastructure concerns and would require essentially no changes. The work is concentrated in `worker.py` and `main.py`, which are the transport and coordination layer. What follows is a rough outline of how each area decomposes, what technology fits, and approximately how much work is involved for an engineer already familiar with the codebase.
+
+### Job queuing and processing
+
+**Approach:** Celery with Redis or RabbitMQ as the broker is the natural Python choice. `_process()` in `worker.py` is already a clean, self-contained unit of work — it takes a PDF path, job ID, and output directory. Converting it to a Celery task is largely wiring: replace the `inbox/` write and watchdog trigger with a `.delay()` call, and Celery handles worker pool management, retries, and dead-letter routing. If staying on Azure, Azure Service Bus with Azure Container Apps Jobs is the native equivalent.
+
+**What changes:** `worker.py` (submission path, pool management) and `main.py` (upload handler). The pipeline itself is unchanged.
+
+**Rough effort:** 2–3 days.
+
+### File storage
+
+**Approach:** The code that writes output files already routes through `Path` objects in `report.py` and `worker.py`. Introducing a thin storage abstraction and swapping to Azure Blob Storage or S3 is mostly mechanical. The `main.py` result routes (`/results/{job_id}/thumbnail.jpg` etc.) change from `FileResponse` to either pre-signed URL redirects or proxy reads from blob storage.
+
+**What changes:** A storage abstraction module; 5–6 write sites in `report.py` and `worker.py`; result routes in `main.py`.
+
+**Rough effort:** 1–2 days, plus time to get IAM/RBAC permissions right — which tends to take longer than the code.
+
+### State management
+
+**Approach:** Redis hashes are a natural replacement for the `_jobs` in-memory dict. The `_set_job`, `get_job`, and `get_jobs` interface is already clean; replacing the backing store is straightforward. The harder part is the SSE event bridge. Currently, worker threads push job-completion events and log lines to asyncio queues in the same process via `loop.call_soon_threadsafe()`. With multiple API replicas, a completion event on one replica doesn't reach SSE subscribers connected to a different one. Redis pub/sub solves this: workers publish to a channel, every API replica subscribes, and each fans out to its local SSE connections. It's a well-understood pattern but requires rethinking `_SSELogHandler` and `_emit_event()` in `worker.py`.
+
+**What changes:** `worker.py` state management and SSE bridge; `main.py` SSE endpoints.
+
+**Rough effort:** 3–4 days; the SSE fan-out piece needs careful testing.
+
+### Logging
+
+**Approach:** The `job_id` ContextVar already acts as a correlation ID — every log line carries it. Adding a structured JSON formatter (`python-json-logger` is the standard library) and shipping to Azure Monitor, Datadog, or an ELK stack is a small change. The live SSE log stream remains useful in single-server and local deployments; in a multi-replica environment, agents would use the log aggregation UI for queries rather than the live stream.
+
+**What changes:** Log formatter configuration in `main.py`; optionally a log shipper sidecar in the container.
+
+**Rough effort:** Half a day for structured logging; the multi-replica log stream follows from the Redis pub/sub work in state management.
+
+### Observability: metrics and dashboards
+
+**Approach:** `prometheus-fastapi-instrumentator` adds HTTP request counts and latency histograms with three lines of code — useful baseline but not specific enough for this workload. The meaningful metrics are pipeline-specific:
+
+- `proofreader_jobs_total{verdict="PASS|FAIL|WARN|INDETERMINATE|ERROR"}` — verdict distribution over time
+- `proofreader_pipeline_stage_seconds{stage="pdf|ocr|vision|compare|annotate"}` — per-stage latency histogram; identifies where time is going
+- `proofreader_queue_depth` — are workers keeping up with submissions?
+- `proofreader_anthropic_api_seconds` and a companion error counter — the vision API dominates per-job latency and is outside our control; alerting on elevated error rate here is critical
+
+Grafana dashboards worth building: queue depth over time, P50/P95/P99 latency per stage, verdict distribution, Anthropic API availability. OpenTelemetry is worth considering over raw Prometheus if the target backend is undecided — instrument once, route to Prometheus, Azure Monitor, or Datadog depending on where the deployment lands.
+
+**What changes:** Instrumentation at stage boundaries in `_process()` (8–9 explicit timer sites); Prometheus exposition endpoint; Grafana dashboard definitions.
+
+**Rough effort:** 1 day for instrumentation; 1–2 days for dashboards that are genuinely useful rather than technically present.
+
+### Summary
+
+| Area | Effort | Primary files |
+|---|---|---|
+| Structured logging | ½ day | `main.py` |
+| File storage | 1–2 days | `report.py`, `worker.py`, `main.py` |
+| Job queuing (Celery) | 2–3 days | `worker.py`, `main.py` |
+| Metrics + dashboards | 2–3 days | `worker.py` (instrumentation) |
+| Redis state + SSE fan-out | 3–4 days | `worker.py`, `main.py` |
+
+Rough total: 2–3 weeks for one engineer, not counting deployment infrastructure setup, security review, or credential/permissions work in the target cloud environment. The pipeline modules are untouched throughout.
