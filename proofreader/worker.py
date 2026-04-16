@@ -29,6 +29,16 @@ so all pipeline stages log under the same ID without threading the ID explicitly
 _emit_event() fans out a JSON payload to all /events SSE subscribers in the same
 way. The browser listens on /events for {job_id, verdict} notifications.
 
+## Azure keepalive
+
+A daemon thread (_keepalive_worker) pings GET /health every 30 seconds while any
+jobs are queued or processing. Azure Container Apps scales a replica to zero when
+it sees no incoming HTTP traffic for ~5 minutes; this prevents a scale-down event
+from interrupting an in-flight pipeline run. The thread checks _jobs before each
+ping and skips it when the queue is empty, so idle instances still scale down
+normally. The target URL is http://127.0.0.1:{PROOFREADER_PORT}/health (default
+port 8000; override via PROOFREADER_PORT env var).
+
 Public API:
     start(inbox, outbox, n_workers, loop) — call from FastAPI startup
     stop()                                — call from FastAPI shutdown
@@ -44,10 +54,12 @@ Public API:
 import asyncio
 import json
 import logging
+import os
 import secrets
 import shutil
 import threading
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from pathlib import Path
@@ -278,6 +290,38 @@ def _save_thumbnail(page1, job_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Azure keepalive
+# ---------------------------------------------------------------------------
+
+_KEEPALIVE_INTERVAL = 30  # seconds between pings
+_KEEPALIVE_URL = (
+    f"http://127.0.0.1:{os.environ.get('PROOFREADER_PORT', '8000')}/health"
+)
+
+
+def _keepalive_worker() -> None:
+    """Ping /health every 30 s while any jobs are queued or processing.
+
+    Prevents Azure Container Apps from scaling the replica to zero mid-pipeline.
+    Skips the ping when the job queue is empty so idle instances still scale down.
+    Runs as a daemon thread for the lifetime of the process; no explicit stop needed.
+    """
+    while True:
+        time.sleep(_KEEPALIVE_INTERVAL)
+        with _jobs_lock:
+            active = any(
+                j.get("status") in ("queued", "processing")
+                for j in _jobs.values()
+            )
+        if not active:
+            continue
+        try:
+            urllib.request.urlopen(_KEEPALIVE_URL, timeout=5)
+        except Exception:
+            pass  # server may be briefly busy; safe to miss one ping
+
+
+# ---------------------------------------------------------------------------
 # Worker pool
 # ---------------------------------------------------------------------------
 
@@ -490,6 +534,10 @@ def start(
     _observer = Observer()
     _observer.schedule(_InboxHandler(), str(inbox), recursive=False)
     _observer.start()
+
+    threading.Thread(
+        target=_keepalive_worker, daemon=True, name="proofreader-keepalive"
+    ).start()
 
     logger.info("Worker pool started: n_workers=%d inbox=%s outbox=%s", n_workers, inbox, outbox)
 
