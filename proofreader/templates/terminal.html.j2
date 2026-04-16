@@ -1,0 +1,25 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<h1>ProofReader — Submission Error</h1>
+<div class="meta">
+  <strong>Job:</strong> {{ job_id }}<br>
+  <strong>File:</strong> {{ original_filename | default("—") }}
+</div>
+
+<p>
+  <strong>Overall verdict:</strong>
+  <span class="verdict verdict-INDETERMINATE">INDETERMINATE</span>
+  — {{ verdict_description }}
+</p>
+
+<h2>Extraction failure: {{ reason_name }}</h2>
+<p>{{ reason_description }}</p>
+<p>Please resubmit with a corrected PDF.</p>
+
+{% if logs %}
+<details>
+  <summary>Pipeline logs ({{ logs | length }} lines)</summary>
+  <pre>{{ logs | join("\n") }}</pre>
+</details>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html.j2" %}
+{% block content %}
+<h1>ProofReader — Compliance Report</h1>
+<div class="meta">
+  <strong>Job:</strong> {{ job_id }}<br>
+  <strong>File:</strong> {{ original_filename | default("—") }}<br>
+  <strong>Product type:</strong> {{ product_type or "indeterminate" }}<br>
+  <strong>Import indicators:</strong> {{ "yes" if import_indicators else "no" }}
+</div>
+
+<p>
+  <strong>Overall verdict:</strong>
+  <span class="verdict verdict-{{ verdict }}">{{ verdict }}</span>
+  — {{ verdict_description }}
+</p>
+
+<h2>Field findings</h2>
+<table>
+  <tr>
+    <th>Field</th>
+    <th>Verdict</th>
+    <th>Extracted text</th>
+    <th>Note</th>
+  </tr>
+  {% for f in fields %}
+  <tr>
+    <td>{{ f.field }}</td>
+    <td><span class="verdict verdict-{{ f.verdict }}">{{ f.verdict }}</span></td>
+    <td>{{ f.extracted or "" }}</td>
+    <td class="note">{{ f.note or "" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Annotated label</h2>
+<img src="data:image/jpeg;base64,{{ annotated_b64 }}" alt="Annotated label zone">
+
+{% if logs %}
+<details>
+  <summary>Pipeline logs ({{ logs | length }} lines)</summary>
+  <pre>{{ logs | join("\n") }}</pre>
+</details>
+{% endif %}
+{% endblock %}

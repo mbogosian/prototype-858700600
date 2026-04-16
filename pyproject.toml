@@ -1,0 +1,82 @@
+[project]
+name = "proofreader"
+version = "0.1.0"
+description = "AI-powered TTB alcohol label compliance verification"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "anthropic>=0.25",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "pymupdf>=1.24",
+    "paddlepaddle>=2.6,<3",
+    "paddleocr>=2.7,<3",
+    "pillow>=10.3",
+    "jinja2>=3.1",
+    "watchdog>=4.0",
+    "python-multipart>=0.0.9",
+    "sse-starlette>=2.1",
+    "setuptools>=82.0.1",
+    "opencv-python-headless>=4.13.0.92",
+    "opencv-contrib-python-headless>=4.13.0.92",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.9",
+    "ty>=0.0.1a6",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "PIE", # flake8-pie
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",  # line too long — handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B"]  # bugbear rules are noisy in test helpers
+
+[tool.pytest.ini_options]
+# testpaths includes both tests/ (for test_*.py files) and proofreader/ (for
+# doctest collection via --doctest-modules). No doctests exist yet; this ensures
+# any that are added get run automatically without further config changes.
+testpaths = ["tests", "proofreader"]
+# -m "not integration" is the default so that `uv run pytest` is always safe:
+# integration tests load PaddleOCR (~2 GB RAM) and require sample PDFs.
+# To run integration tests: uv run pytest -m integration
+# To run everything:        uv run pytest -m ""
+addopts = "--doctest-modules --import-mode=importlib -m 'not integration'"
+doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
+# Register custom marks so -m filtering works without warnings.
+markers = [
+    "integration: requires PaddleOCR initialisation and sample PDFs in tests/sample_applications/",
+]
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

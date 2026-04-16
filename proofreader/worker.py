@@ -1,0 +1,428 @@
+"""
+Worker pool, inbox watcher, and Server-Side Event (SSE) bridge for
+ProofReader.
+
+Responsibilities:
+  - Assign job IDs; maintain per-job state
+  - Run the per-PDF pipeline in a ThreadPoolExecutor
+  - Watch the inbox directory for manually-dropped PDFs (watchdog)
+  - Bridge worker-thread log output to async /logs SSE subscribers
+  - Broadcast job completion/error events to async /events SSE subscribers
+
+## Job ID assignment
+
+Job IDs are assigned at submission time (12-char lowercase hex, e.g. "a3f9c2d17e8b").
+Web uploads: ID is assigned by submit_upload() before the file is written to inbox,
+so the watchdog handler can recognise the file as already-registered and skip it.
+Manual inbox drops: the watchdog assigns a new ID on file creation.
+
+## Log bridge
+
+A logging.Handler (_SSELogHandler) runs on the worker threads. It formats log
+records and puts them onto per-connection asyncio queues via loop.call_soon_threadsafe().
+The /logs SSE endpoint manages subscriber queue membership. A logging.Filter
+(JobIdFilter) injects the current job ID from a ContextVar into every log record
+so all pipeline stages log under the same ID without threading the ID explicitly.
+
+## Event bridge
+
+_emit_event() fans out a JSON payload to all /events SSE subscribers in the same
+way. The browser listens on /events for {job_id, verdict} notifications.
+
+Public API:
+    start(inbox, outbox, n_workers, loop) — call from FastAPI startup
+    stop()                                — call from FastAPI shutdown
+    submit_upload(pdf_bytes, filename)    — web upload path; returns job_id
+    get_jobs()                            — all known jobs (for master list)
+    get_job(job_id)                       — single job state dict or None
+    JobIdFilter                           — logging.Filter; install at app startup
+    _SSELogHandler                        — logging.Handler; install at app startup
+    _log_subscribers                      — set[Queue]; managed by /logs SSE endpoint
+    _event_subscribers                    — set[Queue]; managed by /events SSE endpoint
+"""
+
+import asyncio
+import json
+import logging
+import secrets
+import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
+from pathlib import Path
+
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
+
+from proofreader import annotate, compare, pdf, report, vision
+from proofreader.models import Verdict
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Job ID context variable
+# ---------------------------------------------------------------------------
+
+_job_id: ContextVar[str] = ContextVar("job_id", default="-")
+
+
+class JobIdFilter(logging.Filter):
+    """Injects the current job_id ContextVar value into every log record.
+
+    Install once on the root logger at startup. All downstream loggers inherit it.
+    The ContextVar is set at the top of _process(), so every log line emitted
+    by pdf.py, vision.py, compare.py, etc. carries the correct job ID without
+    any of those modules knowing about it.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.job_id = _job_id.get()  # type: ignore[attr-defined]
+        return True
+
+
+# ---------------------------------------------------------------------------
+# SSE bridges
+# ---------------------------------------------------------------------------
+
+_log_loop: asyncio.AbstractEventLoop | None = None
+
+# Per-connection asyncio queues. SSE endpoints add/remove themselves.
+_log_subscribers: set[asyncio.Queue[str]] = set()
+_event_subscribers: set[asyncio.Queue[str]] = set()
+
+# Maximum log lines retained per job. Older lines are dropped once the cap is
+# reached so a runaway job cannot grow _jobs unboundedly.
+_LOG_BUFFER_MAX = 1000
+
+
+class _SSELogHandler(logging.Handler):
+    """Forwards formatted log records to all connected /logs SSE subscribers
+    and accumulates them in the per-job log buffer for inclusion in the report.
+
+    Runs on worker threads; uses loop.call_soon_threadsafe() to safely enqueue
+    onto asyncio queues owned by the event loop thread.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        line = self.format(record)
+
+        # Accumulate into the per-job buffer so the completed report can include
+        # the full log regardless of whether any SSE client was connected.
+        job_id = getattr(record, "job_id", "-")
+        if job_id != "-":
+            with _jobs_lock:
+                entry = _jobs.get(job_id)
+                if entry is not None:
+                    buf = entry.setdefault("logs", [])
+                    if len(buf) < _LOG_BUFFER_MAX:
+                        buf.append(line)
+
+        # Fan out to SSE subscribers.
+        if _log_loop is None or not _log_subscribers:
+            return
+
+        def _push() -> None:
+            for q in list(_log_subscribers):
+                try:
+                    q.put_nowait(line)
+                except asyncio.QueueFull:
+                    pass  # slow subscriber; drop rather than block
+
+        _log_loop.call_soon_threadsafe(_push)
+
+
+def _emit_event(payload: dict) -> None:
+    """Broadcast a job status event to all /events SSE subscribers."""
+    if _log_loop is None or not _event_subscribers:
+        return
+    data = json.dumps(payload)
+
+    def _push() -> None:
+        for q in list(_event_subscribers):
+            try:
+                q.put_nowait(data)
+            except asyncio.QueueFull:
+                pass
+
+    _log_loop.call_soon_threadsafe(_push)
+
+
+# ---------------------------------------------------------------------------
+# Job state
+# ---------------------------------------------------------------------------
+
+_jobs_lock = threading.Lock()
+_jobs: dict[str, dict] = {}
+
+
+def _set_job(job_id: str, **fields) -> None:
+    with _jobs_lock:
+        # Always store job_id in the dict so get_jobs() can include it.
+        entry = _jobs.setdefault(job_id, {"job_id": job_id})
+        entry.update(fields)
+
+
+def get_jobs() -> list[dict]:
+    with _jobs_lock:
+        return list(_jobs.values())
+
+
+def get_job(job_id: str) -> dict | None:
+    with _jobs_lock:
+        return _jobs.get(job_id)
+
+
+# ---------------------------------------------------------------------------
+# Per-PDF pipeline
+# ---------------------------------------------------------------------------
+
+
+def _process(pdf_path: Path, job_id: str, outbox: Path) -> None:
+    """Run the full ProofReader pipeline for one PDF. Executes in a worker thread."""
+    _job_id.set(job_id)
+    job_dir = outbox / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Pipeline start: %s", pdf_path.name)
+    _set_job(job_id, status="processing")
+
+    # Stage 1: PDF extraction — always returns a result; reason is non-None on failure.
+    page1 = pdf.extract_page1(pdf_path)
+    _save_thumbnail(page1, job_dir)
+
+    if page1.reason is not None:
+        logger.warning("Terminal state %s: %s", page1.reason.name, page1.reason.description)
+        with _jobs_lock:
+            logs = list(_jobs.get(job_id, {}).get("logs", []))
+        report.render_terminal(job_id, page1, job_dir, logs)
+        shutil.move(str(pdf_path), job_dir / "original.pdf")
+        pdf_path.with_suffix(".json").unlink(missing_ok=True)
+        _set_job(job_id, status="complete", verdict=Verdict.INDETERMINATE.name)
+        _emit_event({"job_id": job_id, "verdict": Verdict.INDETERMINATE.name})
+        return
+
+    logger.info("Extraction OK: product_type=%r", page1.product_type)
+
+    # Stage 2: Label analysis via vision model.
+    # label_zone is non-None when reason is None — structural guarantee from Page1Result.
+    assert page1.label_zone is not None
+    findings = vision.read_labels(page1.label_zone, page1.product_type)
+    logger.info(
+        "Label analysis complete: verdict=%s fields=%d",
+        findings.verdict.name,
+        len(findings.fields),
+    )
+
+    # Stage 3: Comparison and excusal logic.
+    findings = compare.assess(findings, page1.product_type)
+
+    # Stage 4: Annotate label zone with per-field verdict polygons.
+    annotated_zone = annotate.annotate(page1.label_zone, findings)
+
+    # Stage 5: Render report.html and findings.json; move original to outbox.
+    # Log before snapshotting so "Pipeline complete" appears in the report.
+    verdict = findings.verdict.name
+    logger.info("Pipeline complete: verdict=%s", verdict)
+    with _jobs_lock:
+        logs = list(_jobs.get(job_id, {}).get("logs", []))
+    report.render(job_id, page1, annotated_zone, findings, job_dir, logs)
+    shutil.move(str(pdf_path), job_dir / "original.pdf")
+    pdf_path.with_suffix(".json").unlink(missing_ok=True)
+    _set_job(job_id, status="complete", verdict=verdict)
+    _emit_event({"job_id": job_id, "verdict": verdict})
+
+
+def _save_thumbnail(page1, job_dir: Path) -> None:
+    """Save a small JPEG of page 1 for the master list. Silently skips if unavailable."""
+    if page1.page1_image is None:
+        return
+    thumb = page1.page1_image.copy()
+    thumb.thumbnail((300, 400))
+    thumb.save(job_dir / "thumbnail.jpg", format="JPEG", quality=80)
+
+
+# ---------------------------------------------------------------------------
+# Worker pool
+# ---------------------------------------------------------------------------
+
+_executor: ThreadPoolExecutor | None = None
+_inbox: Path | None = None
+_outbox: Path | None = None
+
+
+def _queue(pdf_path: Path, job_id: str) -> None:
+    """Submit one job to the executor; attach error-recovery done-callback."""
+    assert _executor is not None and _outbox is not None
+
+    def _on_done(fut) -> None:
+        exc = fut.exception()
+        if exc:
+            logger.error("Unhandled pipeline error for job %s: %s", job_id, exc, exc_info=exc)
+            _set_job(job_id, status="error", verdict=Verdict.ERROR.name)
+            _emit_event({"job_id": job_id, "verdict": Verdict.ERROR.name})
+
+    _executor.submit(_process, pdf_path, job_id, _outbox).add_done_callback(_on_done)
+
+
+def _write_sidecar(pdf_path: Path, job_id: str, original_filename: str) -> None:
+    """Write a JSON sidecar next to a PDF in the inbox.
+
+    The sidecar survives server restarts and lets the re-queue loop recover
+    the original filename and job ID for files that were in-flight when the
+    server stopped. It is deleted once the job completes (findings.json in
+    the outbox is the durable record thereafter).
+    """
+    sidecar = pdf_path.with_suffix(".json")
+    sidecar.write_text(
+        json.dumps({"job_id": job_id, "original_filename": original_filename})
+    )
+
+
+def submit_upload(pdf_bytes: bytes, original_filename: str) -> str:
+    """Accept a web-uploaded PDF, write it to inbox, and queue processing.
+
+    The job is registered before the file is written so the watchdog handler
+    sees the file as already-known and does not issue a duplicate submission.
+
+    Returns the job_id immediately (before processing starts).
+    """
+    assert _inbox is not None
+
+    # Guard against the (astronomically unlikely) event of a job ID collision.
+    while True:
+        job_id = secrets.token_hex(6)
+        dest = _inbox / f"{job_id}.pdf"
+        with _jobs_lock:
+            if job_id not in _jobs and not dest.exists():
+                break
+
+    _set_job(
+        job_id,
+        status="queued",
+        original_filename=original_filename,
+        verdict=None,
+    )
+    dest.write_bytes(pdf_bytes)
+    # Sidecar is written after the PDF, so a crash between the two leaves an
+    # orphaned PDF with no sidecar. On restart the re-queue loop handles this
+    # gracefully by falling back to path.stem/path.name. Acceptable gap.
+    _write_sidecar(dest, job_id, original_filename)
+    logger.info("Queued upload %r as job %s", original_filename, job_id)
+    _queue(dest, job_id)
+    return job_id
+
+
+# ---------------------------------------------------------------------------
+# Watchdog — inbox watcher for manually-dropped PDFs
+# ---------------------------------------------------------------------------
+
+
+class _InboxHandler(FileSystemEventHandler):
+    """Picks up PDFs dropped directly into inbox (i.e., not via web upload)."""
+
+    def on_created(self, event: FileSystemEvent) -> None:
+        if event.is_directory:
+            return
+        path = Path(str(event.src_path))
+        if path.suffix.lower() != ".pdf":
+            return
+
+        # submit_upload() names its files {job_id}.pdf and pre-registers the job,
+        # so if the stem is already a known job ID we can skip this file.
+        with _jobs_lock:
+            if path.stem in _jobs:
+                return
+
+        # This is a manually-dropped file with a user-chosen name, not a web
+        # upload. Assign a fresh job ID; we cannot use the stem since it is
+        # arbitrary and not guaranteed to be unique.
+        job_id = secrets.token_hex(6)
+        _set_job(
+            job_id,
+            status="queued",
+            original_filename=path.name,
+            verdict=None,
+        )
+        _write_sidecar(path, job_id, path.name)
+        logger.info("Watchdog picked up %s as job %s", path.name, job_id)
+        _queue(path, job_id)
+
+
+_observer = None  # watchdog.observers.Observer, or None before start
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+
+
+def start(
+    inbox: Path,
+    outbox: Path,
+    n_workers: int,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Start the worker pool and inbox watcher. Call from FastAPI startup event."""
+    global _executor, _inbox, _outbox, _observer, _log_loop
+
+    _log_loop = loop
+    _inbox = inbox
+    _outbox = outbox
+    inbox.mkdir(parents=True, exist_ok=True)
+    outbox.mkdir(parents=True, exist_ok=True)
+
+    _executor = ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="proofreader")
+
+    _observer = Observer()
+    _observer.schedule(_InboxHandler(), str(inbox), recursive=False)
+    _observer.start()
+
+    # Re-queue any PDFs left in inbox from a previous run (e.g. after a crash).
+    # Read the sidecar (if present) to recover the original job ID and filename;
+    # fall back to using the stem as the job ID for files without one.
+    for path in sorted(inbox.glob("*.pdf")):
+        sidecar = path.with_suffix(".json")
+        if sidecar.exists():
+            try:
+                meta = json.loads(sidecar.read_text())
+                job_id = meta["job_id"]
+                original_filename = meta.get("original_filename", path.name)
+            except Exception:
+                job_id = path.stem
+                original_filename = path.name
+        else:
+            # No sidecar — either a pre-sidecar upload or a crash between the
+            # two writes. For web uploads the stem is the job ID so processing
+            # is correct, but original_filename is lost and will display as the
+            # job-ID-based filename. Acceptable gap.
+            job_id = path.stem
+            original_filename = path.name
+
+        with _jobs_lock:
+            if job_id in _jobs:
+                continue
+        _set_job(
+            job_id,
+            status="queued",
+            original_filename=original_filename,
+            verdict=None,
+        )
+        logger.info("Re-queuing leftover %s as job %s", path.name, job_id)
+        _queue(path, job_id)
+
+    logger.info("Worker pool started: n_workers=%d inbox=%s outbox=%s", n_workers, inbox, outbox)
+
+
+def stop() -> None:
+    """Graceful shutdown: drain the worker pool and stop the inbox watcher."""
+    global _observer, _executor
+
+    if _observer is not None:
+        _observer.stop()
+        _observer.join()
+        _observer = None
+
+    if _executor is not None:
+        _executor.shutdown(wait=True)
+        _executor = None
+
+    logger.info("Worker pool stopped")

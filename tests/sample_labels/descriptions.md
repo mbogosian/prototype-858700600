@@ -1,0 +1,300 @@
+- allowable-revision-comparison-awards-medals-01.jpg
+  - left
+    - brand label
+    - wine
+- allowable-revision-comparison-awards-medals-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+- allowable-revision-comparison-awards-medals-03.jpg
+  - left
+    - brand label
+    - malt beverage
+- allowable-revision-comparison-bottle-deposit-info-01.jpg
+  - right
+    - back/other label
+    - wine
+- allowable-revision-comparison-bottle-deposit-info-02.jpg
+  - left
+    - back/other label
+    - distilled spirits
+- allowable-revision-comparison-bottle-deposit-info-03.jpg
+  - left
+    - combined brand and back/other
+    - malt beverage
+- allowable-revision-comparison-distilled-spirits-age-statement-01.jpg
+  - right
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-distilled-spirits-neutral-spirits-percentage-01.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-foreign-producer-bottler-shipper-name-address-01.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-foreign-producer-bottler-shipper-name-address-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-foreign-producer-bottler-shipper-name-address-03.jpg
+  - left
+    - brand label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-holiday-seasonal-graphics-01.jpg
+  - right
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-holiday-seasonal-graphics-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-holiday-seasonal-graphics-03.jpg
+  - right
+    - brand label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-label-info-general-01.jpg
+  - left
+    - brand label
+    - wine
+  - right
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-label-info-general-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - right
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-label-info-general-03.jpg
+  - left
+    - brand label
+    - malt beverage
+  - right
+    - brand label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-lot-batch-serial-numbers-01.jpg
+  - left
+    - back/other label
+    - wine
+- allowable-revision-comparison-lot-batch-serial-numbers-02.jpg
+  - ignore (zero bytes)
+- allowable-revision-comparison-lot-batch-serial-numbers-03.jpg
+  - left
+    - brand label
+    - malt beverage
+- allowable-revision-comparison-malt-beverage-optional-abv-01.jpg
+  - right
+    - combined brand and back/other
+  - explanatory text below
+- allowable-revision-comparison-malt-beverage-state-compliance-statements-01.jpg
+  - left
+    - brand label
+  - explanatory text below
+- allowable-revision-comparison-net-contents-statement-01.jpg
+  - left
+    - brand label
+  - explanatory text below
+- allowable-revision-comparison-net-contents-statement-02.jpg
+  - left
+    - brand label
+  - explanatory text below
+- allowable-revision-comparison-net-contents-statement-03.jpg
+  - left
+    - brand label
+  - explanatory text below
+- allowable-revision-comparison-non-mandatory-label-info-01.jpg
+  - right
+    - brand label
+  - explanatory text below
+- allowable-revision-comparison-non-mandatory-label-info-02.jpg
+  - right
+    - brand label
+  - explanatory text below
+- allowable-revision-comparison-non-mandatory-label-info-03.png
+  - right
+    - brand label
+  - explanatory text above
+- allowable-revision-comparison-nutrition-values-calories-carbs-protein-fat-01.jpg
+  - left
+    - back/other label
+  - explanatory text below
+- allowable-revision-comparison-nutrition-values-calories-carbs-protein-fat-02.jpg
+  - left
+    - back/other label
+  - explanatory text below
+- allowable-revision-comparison-nutrition-values-calories-carbs-protein-fat-03.jpg
+  - left
+    - combined brand and back/other
+  - explanatory text below
+- allowable-revision-comparison-trademark-copyright-logo-social-icons-01.jpg
+  - left
+    - back/other label
+  - explanatory text below
+- allowable-revision-comparison-trademark-copyright-logo-social-icons-02.jpg
+  - left
+    - back/other label
+  - explanatory text below
+- allowable-revision-comparison-trademark-copyright-logo-social-icons-03.jpg
+  - left
+    - combined brand and back/other
+  - explanatory text below
+- allowable-revision-comparison-unclassified-01.jpg
+  - left
+    - brand label
+    - wine
+  - right
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-unclassified-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - right
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-unclassified-03.jpg
+  - left
+    - brand label
+    - malt beverage
+  - right
+    - brand label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-unclassified-04.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below (large block)
+- allowable-revision-comparison-unclassified-05.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - explanatory text below (large block)
+- allowable-revision-comparison-unclassified-06.jpg
+  - left
+    - brand label
+    - malt beverage
+  - explanatory text below (large block)
+- allowable-revision-comparison-unclassified-07.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-unclassified-08.jpg
+  - left
+    - brand label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-unclassified-09.jpg
+  - left
+    - brand label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-unclassified-10.jpg
+  - left
+    - back/other label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-unclassified-11.jpg
+  - left
+    - back/other label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-unclassified-12.jpg
+  - left
+    - back/other label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-upc-and-2d-barcodes-01.jpg
+  - left
+    - back/other label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-upc-and-2d-barcodes-02.jpg
+  - left
+    - back/other label
+    - distilled spirits
+  - explanatory text below
+- allowable-revision-comparison-upc-and-2d-barcodes-03.jpg
+  - left
+    - back/other label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-website-phone-fax-zip-01.jpg
+  - left
+    - brand label
+    - wine
+- allowable-revision-comparison-website-phone-fax-zip-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+- allowable-revision-comparison-website-phone-fax-zip-03.jpg
+  - left
+    - combined brand and back/other
+    - malt beverage
+- allowable-revision-comparison-wholesaler-retailer-importer-name-address-01.jpg
+  - left
+    - brand label
+    - wine
+- allowable-revision-comparison-wholesaler-retailer-importer-name-address-02.jpg
+  - left
+    - brand label
+    - distilled spirits
+- allowable-revision-comparison-wholesaler-retailer-importer-name-address-03.jpg
+  - left
+    - brand label
+    - malt beverage
+- allowable-revision-comparison-wine-acid-ph-level-01.jpg
+  - left
+    - back/other label
+    - wine
+- allowable-revision-comparison-wine-blend-varietal-percentages-01.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-wine-bonded-winery-number-01.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-wine-malt-beverage-age-statement-01.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-wine-malt-beverage-age-statement-02.jpg
+  - left
+    - brand label
+    - malt beverage
+  - explanatory text below
+- allowable-revision-comparison-wine-production-method-statement-01.jpg
+  - left
+    - back/other label
+    - wine
+- allowable-revision-comparison-wine-sugar-at-harvest-residual-01.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
+- allowable-revision-comparison-wine-vintage-date-01.jpg
+  - left
+    - brand label
+    - wine
+  - explanatory text below
