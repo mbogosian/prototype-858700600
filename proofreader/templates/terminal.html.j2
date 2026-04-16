@@ -3,7 +3,11 @@
 <h1>ProofReader — Submission Error</h1>
 <div class="meta">
   <strong>Job:</strong> {{ job_id }}<br>
-  <strong>File:</strong> {{ original_filename | default("—") }}
+  <strong>File:</strong>
+  {%- if original_filename %}
+    <a href="original.pdf">{{ original_filename }}</a>
+  {%- else %}—
+  {%- endif %}
 </div>
 
 <p>

@@ -76,7 +76,10 @@ markers = [
 [tool.ty.environment]
 python-version = "3.11"
 
-[dependency-groups]
-dev = [
-    "pytest>=9.0.3",
+[tool.uv.workspace]
+members = [
+    ".",
 ]
+
+[tool.uv.sources]
+proofreader = { workspace = true, editable = true }

@@ -36,10 +36,6 @@ def _blank_findings(**kwargs) -> LabelFindings:
     return LabelFindings(verdict=Verdict.PASS, fields=kwargs.get("fields", []))
 
 
-def _field(name: str, verdict: Verdict, extracted: str | None = None) -> FieldFinding:
-    return FieldFinding(field=name, verdict=verdict, extracted=extracted)
-
-
 def _ocr_hit(text: str, conf: float = 0.95, x=10, y=10, w=80, h=20):
     """Return a fake OCR result tuple: (quad, text, confidence)."""
     quad = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
@@ -230,7 +226,7 @@ def test_annotate_does_not_modify_original() -> None:
             img,
             LabelFindings(
                 verdict=Verdict.PASS,
-                fields=[_field("brand_name", Verdict.PASS, "Example Brand")],
+                fields=[FieldFinding(field="brand_name", verdict=Verdict.PASS, extracted="Example Brand")],
             ),
         )
     assert np.array_equal(np.array(img), original_data)
@@ -246,9 +242,9 @@ def test_annotate_no_ocr_call_when_no_annotatable_fields() -> None:
     findings = LabelFindings(
         verdict=Verdict.ABSENT,
         fields=[
-            _field("net_contents", Verdict.ABSENT),
-            _field("brand_name", Verdict.INDETERMINATE),
-            _field("__error__", Verdict.ERROR),
+            FieldFinding(field="net_contents", verdict=Verdict.ABSENT),
+            FieldFinding(field="brand_name", verdict=Verdict.INDETERMINATE),
+            FieldFinding(field="__error__", verdict=Verdict.ERROR),
         ],
     )
     with patch("proofreader.annotate._run_ocr") as mock_ocr:
@@ -260,7 +256,7 @@ def test_annotate_no_ocr_call_when_no_extracted_text() -> None:
     """_run_ocr should not be called when PASS/WARN/FAIL fields have no extracted text."""
     findings = LabelFindings(
         verdict=Verdict.FAIL,
-        fields=[_field("brand_name", Verdict.FAIL, extracted=None)],
+        fields=[FieldFinding(field="brand_name", verdict=Verdict.FAIL)],
     )
     with patch("proofreader.annotate._run_ocr") as mock_ocr:
         annotate(_white_image(), findings)
@@ -277,7 +273,7 @@ def test_annotate_draws_polygon_on_ocr_hit(verdict: Verdict) -> None:
     img = _white_image(200, 200)
     findings = LabelFindings(
         verdict=verdict,
-        fields=[_field("brand_name", verdict, "Example Brand")],
+        fields=[FieldFinding(field="brand_name", verdict=verdict, extracted="Example Brand")],
     )
     with patch(
         "proofreader.annotate._run_ocr",
@@ -292,7 +288,7 @@ def test_annotate_pass_uses_green() -> None:
     img = _white_image(200, 200)
     findings = LabelFindings(
         verdict=Verdict.PASS,
-        fields=[_field("brand_name", Verdict.PASS, "Example Brand")],
+        fields=[FieldFinding(field="brand_name", verdict=Verdict.PASS, extracted="Example Brand")],
     )
     with patch(
         "proofreader.annotate._run_ocr",
@@ -315,7 +311,7 @@ def test_annotate_fail_uses_red() -> None:
     img = _white_image(200, 200)
     findings = LabelFindings(
         verdict=Verdict.FAIL,
-        fields=[_field("government_warning", Verdict.FAIL, "Government Warning")],
+        fields=[FieldFinding(field="government_warning", verdict=Verdict.FAIL, extracted="Government Warning")],
     )
     with patch(
         "proofreader.annotate._run_ocr",
@@ -343,7 +339,7 @@ def test_annotate_draws_dashed_rect_on_ocr_miss() -> None:
     img = _white_image(200, 200)
     findings = LabelFindings(
         verdict=Verdict.WARN,
-        fields=[_field("brand_name", Verdict.WARN, "Curved Brand Name")],
+        fields=[FieldFinding(field="brand_name", verdict=Verdict.WARN, extracted="Curved Brand Name")],
     )
     with patch("proofreader.annotate._run_ocr", return_value=[]):
         result = annotate(img, findings)
@@ -361,7 +357,7 @@ def test_annotate_skips_non_annotatable_verdicts(verdict: Verdict) -> None:
     img = _white_image()
     findings = LabelFindings(
         verdict=verdict,
-        fields=[_field("net_contents", verdict, "750 mL")],
+        fields=[FieldFinding(field="net_contents", verdict=verdict, extracted="750 mL")],
     )
     with patch(
         "proofreader.annotate._run_ocr",
@@ -386,9 +382,9 @@ def test_annotate_mixed_findings_only_draws_for_annotatable() -> None:
     findings = LabelFindings(
         verdict=Verdict.FAIL,
         fields=[
-            _field("brand_name", Verdict.PASS, "Example Brand"),
-            _field("government_warning", Verdict.FAIL, "Government Warning"),
-            _field("net_contents", Verdict.ABSENT),  # no annotation
+            FieldFinding(field="brand_name", verdict=Verdict.PASS, extracted="Example Brand"),
+            FieldFinding(field="government_warning", verdict=Verdict.FAIL, extracted="Government Warning"),
+            FieldFinding(field="net_contents", verdict=Verdict.ABSENT),  # no annotation
         ],
     )
     with patch(

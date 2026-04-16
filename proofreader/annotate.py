@@ -34,6 +34,7 @@ Public API:
     annotate(label_zone, findings) -> Image.Image
 """
 
+import logging
 import math
 import os
 
@@ -41,6 +42,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from proofreader.models import FieldFinding, LabelFindings, Verdict
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Module-level PaddleOCR singleton (expensive to initialise)
@@ -88,6 +91,14 @@ _GAP_LEN = 6
 # the image border.
 _APPROX_INSET = 4
 
+# PaddlePaddle's Conv2dTranspose shape inference can segfault on images that
+# are very small or very large. These bounds guard _run_ocr; images outside
+# the range are skipped and all fields fall back to dashed approximate outlines.
+# Upper bound chosen conservatively — label zones at 300 DPI are typically
+# ~2400 x 1200 px; anything larger suggests a rendering anomaly.
+_OCR_MIN_DIM = 32    # px — shorter side must be at least this
+_OCR_MAX_DIM = 4000  # px — longer side must be no more than this
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -98,10 +109,29 @@ def _run_ocr(image: Image.Image) -> list[tuple[list[list[float]], str, float]]:
     """Run PaddleOCR on image; return (quad, text, confidence) triples.
 
     quad is a list of four [x, y] points in clockwise order. An empty list
-    is returned when OCR finds no text or the result is malformed.
+    is returned when OCR finds no text, the result is malformed, or the image
+    falls outside the safe size range (_OCR_MIN_DIM / _OCR_MAX_DIM). Images
+    outside that range skip OCR entirely — PaddlePaddle's native inference can
+    segfault on extreme dimensions, taking down the whole process.
     """
+    w, h = image.size
+    if min(w, h) < _OCR_MIN_DIM or max(w, h) > _OCR_MAX_DIM:
+        logger.warning(
+            "Skipping OCR: image size %dx%d is outside safe range [%d, %d]",
+            w, h, _OCR_MIN_DIM, _OCR_MAX_DIM,
+        )
+        return []
     ocr = _get_ocr()
-    result = ocr.ocr(np.array(image), cls=False)
+    try:
+        result = ocr.ocr(np.array(image), cls=False)
+    except Exception as exc:
+        # PaddlePaddle can raise RuntimeError ("could not create a primitive
+        # descriptor for a reorder primitive") and similar oneDNN/MKL-DNN
+        # errors for certain image sizes or memory layouts. Treat these the
+        # same as an OCR miss: return empty results so the job completes with
+        # dashed approximate outlines rather than dying with ERROR status.
+        logger.warning("OCR inference failed (%s); skipping text localization", exc)
+        return []
     if not result or not result[0]:
         return []
     out = []

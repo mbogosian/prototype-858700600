@@ -3,7 +3,11 @@
 <h1>ProofReader — Compliance Report</h1>
 <div class="meta">
   <strong>Job:</strong> {{ job_id }}<br>
-  <strong>File:</strong> {{ original_filename | default("—") }}<br>
+  <strong>File:</strong>
+  {%- if original_filename %}
+    <a href="original.pdf">{{ original_filename }}</a>
+  {%- else %}—
+  {%- endif %}<br>
   <strong>Product type:</strong> {{ product_type or "indeterminate" }}<br>
   <strong>Import indicators:</strong> {{ "yes" if import_indicators else "no" }}
 </div>
@@ -25,7 +29,7 @@
   {% for f in fields %}
   <tr>
     <td>{{ f.field }}</td>
-    <td><span class="verdict verdict-{{ f.verdict }}">{{ f.verdict }}</span></td>
+    <td><span class="verdict verdict-{{ f.verdict.name }}">{{ f.verdict.name }}</span></td>
     <td>{{ f.extracted or "" }}</td>
     <td class="note">{{ f.note or "" }}</td>
   </tr>

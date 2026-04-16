@@ -5,7 +5,12 @@ build/
 dist/
 wheels/
 *.egg-info
-.coverage
 
 # Virtual environments
 .venv
+
+# Local testing
+.coverage
+in/
+out/
+*box/

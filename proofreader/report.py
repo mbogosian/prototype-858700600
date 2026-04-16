@@ -50,6 +50,7 @@ def render_terminal(
     page1: Page1Result,
     outbox_dir: Path,
     logs: list[str] | None = None,
+    original_filename: str | None = None,
 ) -> None:
     """Write a minimal report for a terminal extraction state.
 
@@ -71,6 +72,7 @@ def render_terminal(
     tmpl = _env.get_template("terminal.html.j2")
     report_html = tmpl.render(
         job_id=job_id,
+        original_filename=original_filename,
         verdict_description=Verdict.INDETERMINATE.description,
         reason_name=reason_name,
         reason_description=reason_desc,
@@ -86,6 +88,7 @@ def render(
     findings: LabelFindings,
     outbox_dir: Path,
     logs: list[str] | None = None,
+    original_filename: str | None = None,
 ) -> None:
     """Write the full compliance report and findings JSON for a completed analysis."""
     findings_data = {
@@ -111,7 +114,7 @@ def render(
     tmpl = _env.get_template("report.html.j2")
     report_html = tmpl.render(
         job_id=job_id,
-        original_filename=None,  # not threaded through here; available in worker job state
+        original_filename=original_filename,
         product_type=page1.product_type,
         import_indicators=findings.import_indicators,
         verdict=findings.verdict.name,

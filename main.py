@@ -6,6 +6,9 @@ Configuration (environment variables):
   PROOFREADER_INBOX     — directory watched for incoming PDFs (default: ./inbox)
   PROOFREADER_OUTBOX    — directory for completed results   (default: ./outbox)
   PROOFREADER_WORKERS   — ThreadPoolExecutor size           (default: 3)
+  PROOFREADER_LOG_LEVEL        — root log level: DEBUG/INFO/WARNING/ERROR (default: INFO)
+  PROOFREADER_REPORT_LOG_LEVEL — minimum level buffered into per-job reports and
+                                  streamed via /logs SSE (default: INFO)
 
 Routes:
   POST /upload                          — accept one or more PDFs; return job IDs
@@ -38,6 +41,8 @@ from proofreader import worker
 INBOX = Path(os.environ.get("PROOFREADER_INBOX", "./inbox"))
 OUTBOX = Path(os.environ.get("PROOFREADER_OUTBOX", "./outbox"))
 N_WORKERS = int(os.environ.get("PROOFREADER_WORKERS", "3"))
+LOG_LEVEL = os.environ.get("PROOFREADER_LOG_LEVEL", "INFO").upper()
+REPORT_LOG_LEVEL = os.environ.get("PROOFREADER_REPORT_LOG_LEVEL", "INFO").upper()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -48,17 +53,25 @@ _LOG_FORMAT = "%(asctime)s [%(job_id)s] %(name)-30s %(levelname)-8s %(message)s"
 
 def _configure_logging(loop: asyncio.AbstractEventLoop) -> None:
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+    root.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+
+    # JobIdFilter must be on the handlers, not the root logger.
+    # Logger-level filters only run for records that originate on that logger;
+    # records propagated from child loggers (e.g. watchdog, uvicorn) bypass the
+    # parent logger's filters and go directly to its handlers. Attaching the
+    # filter to each handler ensures job_id is injected regardless of origin.
+    job_id_filter = worker.JobIdFilter()
 
     console = logging.StreamHandler()
     console.setFormatter(logging.Formatter(_LOG_FORMAT))
+    console.addFilter(job_id_filter)
     root.addHandler(console)
 
     sse = worker._SSELogHandler()
     sse.setFormatter(logging.Formatter(_LOG_FORMAT))
+    sse.setLevel(getattr(logging, REPORT_LOG_LEVEL, logging.INFO))
+    sse.addFilter(job_id_filter)
     root.addHandler(sse)
-
-    root.addFilter(worker.JobIdFilter())
 
 
 logger = logging.getLogger(__name__)
@@ -141,6 +154,11 @@ async def thumbnail(job_id: str) -> FileResponse:
 @app.get("/results/{job_id}/annotated.jpg")
 async def annotated(job_id: str) -> FileResponse:
     return FileResponse(_result_file(job_id, "annotated.jpg"), media_type="image/jpeg")
+
+
+@app.get("/results/{job_id}/original.pdf")
+async def original_pdf(job_id: str) -> FileResponse:
+    return FileResponse(_result_file(job_id, "original.pdf"), media_type="application/pdf")
 
 
 # ---------------------------------------------------------------------------

@@ -69,7 +69,12 @@ _job_id: ContextVar[str] = ContextVar("job_id", default="-")
 class JobIdFilter(logging.Filter):
     """Injects the current job_id ContextVar value into every log record.
 
-    Install once on the root logger at startup. All downstream loggers inherit it.
+    Install on each handler (not the root logger) at startup. Logger-level
+    filters only run for records originating on that logger; records propagated
+    from child loggers bypass parent-logger filters and go straight to handlers.
+    Attaching this filter to each handler guarantees job_id is injected for
+    every record those handlers receive, regardless of which logger emitted it.
+
     The ContextVar is set at the top of _process(), so every log line emitted
     by pdf.py, vision.py, compare.py, etc. carries the correct job ID without
     any of those modules knowing about it.
@@ -193,8 +198,10 @@ def _process(pdf_path: Path, job_id: str, outbox: Path) -> None:
     if page1.reason is not None:
         logger.warning("Terminal state %s: %s", page1.reason.name, page1.reason.description)
         with _jobs_lock:
-            logs = list(_jobs.get(job_id, {}).get("logs", []))
-        report.render_terminal(job_id, page1, job_dir, logs)
+            job_state = _jobs.get(job_id, {})
+            logs = list(job_state.get("logs", []))
+            original_filename = job_state.get("original_filename")
+        report.render_terminal(job_id, page1, job_dir, logs, original_filename)
         shutil.move(str(pdf_path), job_dir / "original.pdf")
         pdf_path.with_suffix(".json").unlink(missing_ok=True)
         _set_job(job_id, status="complete", verdict=Verdict.INDETERMINATE.name)
@@ -224,8 +231,10 @@ def _process(pdf_path: Path, job_id: str, outbox: Path) -> None:
     verdict = findings.verdict.name
     logger.info("Pipeline complete: verdict=%s", verdict)
     with _jobs_lock:
-        logs = list(_jobs.get(job_id, {}).get("logs", []))
-    report.render(job_id, page1, annotated_zone, findings, job_dir, logs)
+        job_state = _jobs.get(job_id, {})
+        logs = list(job_state.get("logs", []))
+        original_filename = job_state.get("original_filename")
+    report.render(job_id, page1, annotated_zone, findings, job_dir, logs, original_filename)
     shutil.move(str(pdf_path), job_dir / "original.pdf")
     pdf_path.with_suffix(".json").unlink(missing_ok=True)
     _set_job(job_id, status="complete", verdict=verdict)
@@ -372,11 +381,14 @@ def start(
 
     _executor = ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="proofreader")
 
-    _observer = Observer()
-    _observer.schedule(_InboxHandler(), str(inbox), recursive=False)
-    _observer.start()
-
     # Re-queue any PDFs left in inbox from a previous run (e.g. after a crash).
+    # This must run before the watchdog observer starts so that pre-existing
+    # files are registered in _jobs first. If the observer started first it
+    # could fire on_created for those files and assign them new hex job IDs,
+    # while the re-queue loop would then see path.stem absent from _jobs and
+    # queue the same file a second time — producing two competing jobs for one
+    # file and a race on shutil.move.
+    #
     # Read the sidecar (if present) to recover the original job ID and filename;
     # fall back to using the stem as the job ID for files without one.
     for path in sorted(inbox.glob("*.pdf")):
@@ -408,6 +420,13 @@ def start(
         )
         logger.info("Re-queuing leftover %s as job %s", path.name, job_id)
         _queue(path, job_id)
+
+    # Start the watchdog only after all pre-existing files are registered.
+    # Files dropped into inbox between the glob above and observer.start() here
+    # will be missed until the next server restart — acceptable startup gap.
+    _observer = Observer()
+    _observer.schedule(_InboxHandler(), str(inbox), recursive=False)
+    _observer.start()
 
     logger.info("Worker pool started: n_workers=%d inbox=%s outbox=%s", n_workers, inbox, outbox)
 
