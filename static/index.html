@@ -14,126 +14,172 @@ body {
   background: #f5f5f5;
 }
 
-/* ── Layout ── */
-.page { max-width: 960px; margin: 0 auto; padding: 0 1em 2em; }
-
+/* ── Header ── */
 header {
   background: #fff;
   border-bottom: 1px solid #ddd;
-  margin-bottom: 1.5em;
+  margin-bottom: 1.25em;
 }
 header .inner {
-  max-width: 960px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 0.75em 1em;
+  padding: 0.65em 1em;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.75em;
 }
-header h1 { font-size: 1.2em; }
-header p  { font-size: 0.85em; color: #666; }
+header h1   { font-size: 1.1em; }
+header .sub { font-size: 0.82em; color: #777; flex: 1; }
+
+.conn-status {
+  font-size: 0.8em;
+  padding: 0.2em 0.55em;
+  border-radius: 3px;
+  white-space: nowrap;
+  transition: background 0.3s, color 0.3s;
+}
+.conn-ok   { background: #d4edda; color: #155724; }
+.conn-warn { background: #fff3cd; color: #856404; }
+
+/* ── Page body ── */
+.page { max-width: 980px; margin: 0 auto; padding: 0 1em 2em; }
 
 /* ── Upload zone ── */
 .upload-zone {
   border: 2px dashed #bbb;
   border-radius: 6px;
-  padding: 2em 1em;
+  padding: 1.5em 1em;
   text-align: center;
   cursor: pointer;
   background: #fff;
-  margin-bottom: 1.5em;
+  margin-bottom: 1.25em;
   transition: border-color 0.15s, background 0.15s;
   user-select: none;
 }
 .upload-zone:hover,
 .upload-zone.drag-over { border-color: #0d6efd; background: #eef4ff; }
-.upload-zone strong    { font-size: 1em; }
-.upload-zone p         { font-size: 0.85em; color: #777; margin-top: 0.35em; }
+.upload-zone strong    { font-size: 0.95em; }
+.upload-zone p         { font-size: 0.82em; color: #777; margin-top: 0.3em; }
 .upload-zone input     { display: none; }
 
-/* ── Job list ── */
-.section-head {
-  font-size: 0.95em;
-  font-weight: 600;
-  color: #444;
-  margin-bottom: 0.6em;
+/* ── Three-pane grid ── */
+.panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75em;
+  align-items: start;
+  margin-bottom: 1.25em;
 }
-.job-list   { display: flex; flex-direction: column; gap: 0.5em; }
-.empty-note { color: #888; font-size: 0.9em; text-align: center; padding: 2em 0; }
+@media (max-width: 680px) {
+  .panes { grid-template-columns: 1fr; }
+}
 
-.job-card {
+.pane {
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 5px;
+  overflow: hidden;
+}
+.pane-head {
+  padding: 0.5em 0.65em;
+  border-bottom: 1px solid #eee;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #444;
   display: flex;
   align-items: center;
-  gap: 0.75em;
-  padding: 0.6em 0.75em;
+  justify-content: space-between;
 }
+.pane-count {
+  font-size: 0.78em;
+  font-weight: normal;
+  color: #888;
+  background: #f0f0f0;
+  border-radius: 8px;
+  padding: 0.1em 0.45em;
+  min-width: 1.6em;
+  text-align: center;
+}
+.pane-search {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid #eee;
+  padding: 0.4em 0.65em;
+  font-size: 0.82em;
+  outline: none;
+  background: #fafafa;
+}
+.pane-search:focus { background: #fff; border-bottom-color: #0d6efd; }
+.pane-cards {
+  min-height: 60px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* ── Job card ── */
+.job-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+  padding: 0.55em 0.65em;
+  border-bottom: 1px solid #f0f0f0;
+}
+.job-card:last-child { border-bottom: none; }
+
 .job-thumb {
-  width: 50px;
-  min-width: 50px;
-  height: 67px;
+  width: 40px;
+  min-width: 40px;
+  height: 54px;
   object-fit: contain;
   border: 1px solid #e0e0e0;
   border-radius: 2px;
   background: #fafafa;
+  margin-top: 1px;
 }
 .job-thumb-placeholder {
-  width: 50px;
-  min-width: 50px;
-  height: 67px;
+  width: 40px;
+  min-width: 40px;
+  height: 54px;
   background: #fafafa;
   border: 1px solid #e0e0e0;
   border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.4em;
+  font-size: 1.1em;
   color: #ccc;
+  margin-top: 1px;
 }
-.job-meta       { flex: 1; min-width: 0; }
-.job-filename   { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.job-id         { font-size: 0.78em; color: #888; font-family: monospace; margin-top: 0.1em; }
-.job-actions    { display: flex; align-items: center; gap: 0.5em; flex-shrink: 0; }
 
-/* ── Verdict badges ── (same palette as report templates) ── */
+.job-meta       { flex: 1; min-width: 0; }
+.job-filename   { font-size: 0.85em; font-weight: 500; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+.job-id         { font-size: 0.72em; color: #aaa; font-family: monospace;
+                  margin-top: 0.1em; white-space: nowrap; }
+.job-actions    { margin-top: 0.35em; display: flex; align-items: center;
+                  gap: 0.4em; flex-wrap: wrap; }
+
+/* ── Badges ── (same palette as report templates) ── */
 .badge {
-  display: inline-block;
-  padding: 0.2em 0.55em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.15em 0.45em;
   border-radius: 3px;
-  font-size: 0.8em;
+  font-size: 0.75em;
   font-weight: bold;
   white-space: nowrap;
 }
 .badge-PASS,          .badge-EXEMPT        { background: #d4edda; color: #155724; }
 .badge-WARN,          .badge-ABSENT        { background: #fff3cd; color: #856404; }
 .badge-FAIL,          .badge-ERROR         { background: #f8d7da; color: #721c24; }
-.badge-INDETERMINATE, .badge-queued        { background: #e2e3e5; color: #383d41; }
-.badge-processing {
-  background: #e2e3e5;
-  color: #383d41;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35em;
-}
+.badge-INDETERMINATE                       { background: #e2e3e5; color: #383d41; }
+.badge-queued,        .badge-processing    { background: #e2e3e5; color: #383d41; }
 
-/* ── Spinner ── */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner {
-  display: inline-block;
-  width: 10px; height: 10px;
-  border: 2px solid #bbb;
-  border-top-color: #555;
-  border-radius: 50%;
-  animation: spin 0.75s linear infinite;
-  flex-shrink: 0;
-}
-
-/* ── Report button ── */
 .btn-report {
-  padding: 0.25em 0.65em;
-  font-size: 0.82em;
+  display: inline-block;
+  padding: 0.15em 0.5em;
+  font-size: 0.75em;
   border: 1px solid #bbb;
   border-radius: 3px;
   background: #fff;
@@ -143,41 +189,59 @@ header p  { font-size: 0.85em; color: #666; }
 }
 .btn-report:hover { background: #f0f0f0; text-decoration: none; }
 
+.pane-empty {
+  padding: 1em 0.65em;
+  font-size: 0.82em;
+  color: #bbb;
+  text-align: center;
+}
+
+/* ── Spinner ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border: 2px solid #bbb;
+  border-top-color: #555;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
 /* ── Log panel ── */
 .log-panel {
-  margin-top: 1.5em;
   border: 1px solid #ddd;
   border-radius: 5px;
   overflow: hidden;
   background: #fff;
 }
 .log-toggle {
-  padding: 0.55em 0.75em;
+  padding: 0.5em 0.75em;
   border-bottom: 1px solid #ddd;
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  font-size: 0.9em;
+  font-size: 0.85em;
   font-weight: 600;
   color: #444;
 }
-.log-toggle:hover { background: #fafafa; }
+.log-toggle:hover  { background: #fafafa; }
 .log-body {
-  height: 180px;
+  height: 160px;
   overflow-y: auto;
   font-family: monospace;
-  font-size: 0.78em;
+  font-size: 0.76em;
   line-height: 1.5;
-  padding: 0.4em 0.6em;
+  padding: 0.35em 0.6em;
   background: #1e1e1e;
   color: #ccc;
 }
 .log-body.collapsed { display: none; }
-.log-line { white-space: pre-wrap; word-break: break-all; }
-.log-line.WARN  { color: #e5c07b; }
-.log-line.ERROR { color: #e06c75; }
+.log-line           { white-space: pre-wrap; word-break: break-all; }
+.log-line.WARN      { color: #e5c07b; }
+.log-line.ERROR     { color: #e06c75; }
 </style>
 </head>
 <body>
@@ -185,7 +249,8 @@ header p  { font-size: 0.85em; color: #666; }
 <header>
   <div class="inner">
     <h1>ProofReader</h1>
-    <p>TTB Form 5100.31 — Label Compliance Pre-Screener</p>
+    <span class="sub">TTB Form 5100.31 — Label Compliance Pre-Screener</span>
+    <span class="conn-status conn-warn" id="connStatus">◌ Connecting…</span>
   </div>
 </header>
 
@@ -198,16 +263,39 @@ header p  { font-size: 0.85em; color: #666; }
     <p>Accepts TTB Form 5100.31 submissions. Multiple files at once are fine.</p>
   </div>
 
-  <!-- Job list -->
-  <div class="section-head" id="jobsHeading">Jobs</div>
-  <div class="job-list" id="jobList">
-    <div class="empty-note" id="emptyNote">No jobs yet. Upload a PDF to get started.</div>
+  <!-- Three panes -->
+  <div class="panes">
+    <div class="pane" id="pane-queued">
+      <div class="pane-head">
+        Queued
+        <span class="pane-count" id="count-queued">0</span>
+      </div>
+      <input class="pane-search" id="search-queued" type="search" placeholder="filter…" autocomplete="off">
+      <div class="pane-cards" id="cards-queued"></div>
+    </div>
+    <div class="pane" id="pane-progress">
+      <div class="pane-head">
+        In Progress
+        <span class="pane-count" id="count-progress">0</span>
+      </div>
+      <input class="pane-search" id="search-progress" type="search" placeholder="filter…" autocomplete="off">
+      <div class="pane-cards" id="cards-progress"></div>
+    </div>
+    <div class="pane" id="pane-done">
+      <div class="pane-head">
+        Done
+        <span class="pane-count" id="count-done">0</span>
+      </div>
+      <input class="pane-search" id="search-done" type="search" placeholder="filter…" autocomplete="off">
+      <div class="pane-cards" id="cards-done"></div>
+    </div>
   </div>
 
   <!-- Log panel -->
   <div class="log-panel">
     <div class="log-toggle" id="logToggle">
-      <span>Live Log</span><span id="logArrow">▼</span>
+      <span>Live Log</span>
+      <span id="logArrow">▼</span>
     </div>
     <div class="log-body" id="logBody"></div>
   </div>
@@ -217,10 +305,33 @@ header p  { font-size: 0.85em; color: #666; }
 <script>
 "use strict";
 
-// job_id → job object; Map preserves insertion order
-const jobs = new Map();
+// ── State ─────────────────────────────────────────────────────────────────────
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+const jobs    = new Map();   // job_id → job object
+const myJobs  = new Set();   // job_ids submitted this session (for notifications)
+const queries = { queued: "", progress: "", done: "" };
+
+// ── Pane definitions ──────────────────────────────────────────────────────────
+
+const PANES = [
+  {
+    key:    "queued",
+    filter: j => j.status === "queued",
+    sort:   (a, b) => (a.submitted_at ?? 0) - (b.submitted_at ?? 0),   // asc: oldest first
+  },
+  {
+    key:    "progress",
+    filter: j => j.status === "processing",
+    sort:   (a, b) => (b.submitted_at ?? 0) - (a.submitted_at ?? 0),   // desc: newest first
+  },
+  {
+    key:    "done",
+    filter: j => j.status === "complete" || j.status === "error",
+    sort:   (a, b) => (b.submitted_at ?? 0) - (a.submitted_at ?? 0),   // desc: newest first
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(s) {
   return String(s ?? "")
@@ -246,70 +357,84 @@ function reportLink(job) {
 }
 
 function cardHtml(job) {
-  return `<div class="job-card" id="card-${esc(job.job_id)}">
-  <img class="job-thumb"
-       src="/results/${esc(job.job_id)}/thumbnail.jpg"
-       onerror="this.style.display='none';this.nextSibling.style.display='flex';"
-       alt="">
+  const id = esc(job.job_id);
+  const fn = esc(job.original_filename ?? job.job_id);
+  return `<div class="job-card">
+  <img class="job-thumb" src="/results/${id}/thumbnail.jpg"
+       onerror="this.style.display='none';this.nextSibling.style.display='flex';" alt="">
   <div class="job-thumb-placeholder" style="display:none">📄</div>
   <div class="job-meta">
-    <div class="job-filename" title="${esc(job.original_filename ?? job.job_id)}">${esc(job.original_filename ?? job.job_id)}</div>
-    <div class="job-id">${esc(job.job_id)}</div>
-  </div>
-  <div class="job-actions">
-    <span id="badge-${esc(job.job_id)}">${verdictBadge(job)}</span>
-    <span id="action-${esc(job.job_id)}">${reportLink(job)}</span>
+    <div class="job-filename" title="${fn}">${fn}</div>
+    <div class="job-id">${id}</div>
+    <div class="job-actions">
+      ${verdictBadge(job)}${reportLink(job)}
+    </div>
   </div>
 </div>`;
 }
 
-// ── Rendering ────────────────────────────────────────────────────────────────
+// ── Rendering ─────────────────────────────────────────────────────────────────
 
-function renderAll() {
-  const list    = document.getElementById("jobList");
-  const empty   = document.getElementById("emptyNote");
-  const heading = document.getElementById("jobsHeading");
+function renderPane(pane) {
+  const q       = queries[pane.key].toLowerCase();
+  const cardsEl = document.getElementById(`cards-${pane.key}`);
+  const countEl = document.getElementById(`count-${pane.key}`);
 
-  if (jobs.size === 0) {
-    list.innerHTML = "";
-    list.appendChild(empty);
-    heading.textContent = "Jobs";
-    return;
+  let list = [...jobs.values()].filter(pane.filter);
+  list.sort(pane.sort);
+
+  // Update count (total, before search filter)
+  if (countEl) countEl.textContent = list.length;
+
+  // Apply search filter
+  if (q) {
+    list = list.filter(j =>
+      (j.original_filename ?? "").toLowerCase().includes(q) ||
+      j.job_id.includes(q)
+    );
   }
 
-  empty.remove();
-  // Newest first: reverse insertion order
-  list.innerHTML = [...jobs.values()].reverse().map(cardHtml).join("");
-  heading.textContent = `Jobs (${jobs.size})`;
+  cardsEl.innerHTML = list.length
+    ? list.map(cardHtml).join("")
+    : `<div class="pane-empty">${q ? "No matches." : "Empty."}</div>`;
 }
 
-function updateCard(job_id) {
-  const job    = jobs.get(job_id);
-  const badge  = document.getElementById(`badge-${job_id}`);
-  const action = document.getElementById(`action-${job_id}`);
-  if (!job || !badge) { renderAll(); return; }
-  badge.innerHTML  = verdictBadge(job);
-  action.innerHTML = reportLink(job);
+function renderAll() {
+  for (const pane of PANES) renderPane(pane);
 }
 
-// ── Data ─────────────────────────────────────────────────────────────────────
+// ── Data ──────────────────────────────────────────────────────────────────────
 
 async function loadJobs() {
   try {
     const resp = await fetch("/results");
     if (!resp.ok) return;
     const list = await resp.json();
-    jobs.clear();
-    for (const j of list) jobs.set(j.job_id, j);
+    // Merge: update existing entries, add new ones, keep myJobs intact
+    for (const j of list) {
+      const existing = jobs.get(j.job_id);
+      jobs.set(j.job_id, existing ? Object.assign(existing, j) : j);
+    }
     renderAll();
   } catch (_) { /* server not yet ready */ }
 }
 
+// Poll every 5 s to catch queued → processing transitions (no SSE event for that)
+setInterval(loadJobs, 5000);
+
 // ── Upload ────────────────────────────────────────────────────────────────────
+
+let notifRequested = false;
 
 async function uploadFiles(files) {
   const pdfs = [...files].filter(f => f.name.toLowerCase().endsWith(".pdf"));
   if (!pdfs.length) return;
+
+  // Ask for notification permission once, on the user's first upload gesture
+  if (!notifRequested && "Notification" in window && Notification.permission === "default") {
+    notifRequested = true;
+    Notification.requestPermission();
+  }
 
   const form = new FormData();
   pdfs.forEach(f => form.append("files", f));
@@ -324,11 +449,13 @@ async function uploadFiles(files) {
   for (const r of results) {
     if (r.job_id) {
       jobs.set(r.job_id, {
-        job_id: r.job_id,
-        status: r.status ?? "queued",
+        job_id:            r.job_id,
+        status:            r.status ?? "queued",
         original_filename: r.filename,
-        verdict: null,
+        verdict:           null,
+        submitted_at:      Date.now() / 1000,
       });
+      myJobs.add(r.job_id);
     }
   }
   renderAll();
@@ -347,23 +474,68 @@ zone.addEventListener("drop", e => {
   uploadFiles(e.dataTransfer.files);
 });
 
+// ── Search ────────────────────────────────────────────────────────────────────
+
+for (const pane of PANES) {
+  document.getElementById(`search-${pane.key}`).addEventListener("input", e => {
+    queries[pane.key] = e.target.value;
+    renderPane(pane);
+  });
+}
+
+// ── Connection status ─────────────────────────────────────────────────────────
+
+let eventsOk = false;
+let logsOk   = false;
+
+function updateConnStatus() {
+  const el  = document.getElementById("connStatus");
+  const ok  = eventsOk && logsOk;
+  el.className   = "conn-status " + (ok ? "conn-ok" : "conn-warn");
+  el.textContent = ok ? "● Live" : "◌ Reconnecting…";
+}
+
+// ── Browser notifications ─────────────────────────────────────────────────────
+
+function notifyDone(job) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const verdict = job.verdict ?? "complete";
+  new Notification(`ProofReader — ${verdict}`, {
+    body: job.original_filename ?? job.job_id,
+    tag:  job.job_id,   // deduplicate if event fires twice
+  });
+}
+
 // ── SSE: job completion events ────────────────────────────────────────────────
 
 function connectEvents() {
   const es = new EventSource("/events");
+
+  es.onopen = () => {
+    eventsOk = true;
+    updateConnStatus();
+  };
+
   es.onmessage = e => {
     const data = JSON.parse(e.data);
     const job  = jobs.get(data.job_id);
     if (job) {
       job.status  = "complete";
       job.verdict = data.verdict;
-      updateCard(data.job_id);
+      renderAll();
+      if (myJobs.has(data.job_id)) notifyDone(job);
     } else {
-      // Arrived via watchdog inbox drop — not in our local state yet
+      // Job arrived via watchdog inbox drop — refresh full list
       loadJobs();
     }
   };
-  es.onerror = () => { es.close(); setTimeout(connectEvents, 3000); };
+
+  es.onerror = () => {
+    eventsOk = false;
+    updateConnStatus();
+    es.close();
+    setTimeout(connectEvents, 3000);
+  };
 }
 
 // ── SSE: log stream ───────────────────────────────────────────────────────────
@@ -382,17 +554,29 @@ function appendLog(line) {
   div.textContent = line;
   logBody.appendChild(div);
   if (atBottom) logBody.scrollTop = logBody.scrollHeight;
-  // Keep the last 2 000 lines to avoid unbounded growth
+  // Cap at 2 000 lines to prevent unbounded growth
   while (logBody.children.length > 2000) logBody.removeChild(logBody.firstChild);
 }
 
 function connectLogs() {
   const es = new EventSource("/logs");
+
+  es.onopen = () => {
+    logsOk = true;
+    updateConnStatus();
+  };
+
   es.onmessage = e => appendLog(e.data);
-  es.onerror   = () => { es.close(); setTimeout(connectLogs, 3000); };
+
+  es.onerror = () => {
+    logsOk = false;
+    updateConnStatus();
+    es.close();
+    setTimeout(connectLogs, 3000);
+  };
 }
 
-// ── Log toggle ────────────────────────────────────────────────────────────────
+// ── Log panel toggle ──────────────────────────────────────────────────────────
 
 document.getElementById("logToggle").addEventListener("click", () => {
   const collapsed = logBody.classList.toggle("collapsed");

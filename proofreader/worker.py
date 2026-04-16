@@ -47,6 +47,7 @@ import logging
 import secrets
 import shutil
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from pathlib import Path
@@ -310,6 +311,7 @@ def submit_upload(pdf_bytes: bytes, original_filename: str) -> str:
         status="queued",
         original_filename=original_filename,
         verdict=None,
+        submitted_at=time.time(),
     )
     dest.write_bytes(pdf_bytes)
     # Sidecar is written after the PDF, so a crash between the two leaves an
@@ -351,6 +353,7 @@ class _InboxHandler(FileSystemEventHandler):
             status="queued",
             original_filename=path.name,
             verdict=None,
+            submitted_at=time.time(),
         )
         _write_sidecar(path, job_id, path.name)
         logger.info("Watchdog picked up %s as job %s", path.name, job_id)
@@ -417,6 +420,7 @@ def start(
             status="queued",
             original_filename=original_filename,
             verdict=None,
+            submitted_at=path.stat().st_mtime,
         )
         logger.info("Re-queuing leftover %s as job %s", path.name, job_id)
         _queue(path, job_id)
