@@ -57,18 +57,22 @@ class Verdict(Enum):
         return NotImplemented
 
     PASS = 0, "field present and compliant"
-    WARN = 1, "field present but has a minor formatting or wording deviation; review advised"
+    EXEMPT = (
+        1,
+        "field absent but affirmatively not required for this product type or designation; no compliance issue",
+    )
+    WARN = 2, "field present but has a minor formatting or wording deviation; review advised"
     ABSENT = (
-        2,
+        3,
         "field not found on the label; may be excused (e.g. embossed container info listed in Item 15); flagged for review",
     )
-    FAIL = 3, "field present but non-compliant; likely causes rejection"
+    FAIL = 4, "field present but non-compliant; likely causes rejection"
     INDETERMINATE = (
-        4,
+        5,
         "image too degraded or field too ambiguous to assess; the pipeline ran but could not reach a conclusion",
     )
     ERROR = (
-        5,
+        6,
         'a component failure prevented analysis (API timeout, unexpected exception, parse failure, etc.); distinguishes "uncertain result" from "broken pipeline"',
     )
 

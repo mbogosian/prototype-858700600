@@ -68,9 +68,10 @@ def _get_ocr():
 
 # RGB colors for each annotatable verdict.
 _VERDICT_COLORS: dict[Verdict, tuple[int, int, int]] = {
-    Verdict.PASS: (34, 139, 34),   # forest green
-    Verdict.WARN: (255, 140, 0),   # dark orange
-    Verdict.FAIL: (200, 30, 30),   # crimson
+    Verdict.PASS:   (34, 139, 34),   # forest green
+    Verdict.EXEMPT: (34, 139, 34),   # forest green (same as PASS — absent but not required)
+    Verdict.WARN:   (255, 140, 0),   # dark orange
+    Verdict.FAIL:   (200, 30, 30),   # crimson
 }
 
 # Pixel width of drawn outlines.

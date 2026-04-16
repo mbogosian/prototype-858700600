@@ -264,6 +264,12 @@ Rules:
   For bold formatting: FAIL only if "GOVERNMENT WARNING:" is clearly the same weight or lighter
   than the body of the warning; WARN if weight difference is ambiguous from the image quality.
   Do not default to FAIL when bold status is uncertain — prefer WARN.
+- Use EXEMPT when a field is absent AND you can affirmatively determine from the label content
+  that it is not required for this specific product or designation (e.g., age_statement for a
+  product not claiming a designation that implies aging; alcohol_content for a malt beverage
+  with no indication of added non-beverage alcohol or flavors). Do not guess — only use EXEMPT
+  when the regulatory basis for non-requirement is clear. Use ABSENT when absence is noted but
+  you cannot confidently determine whether the field is required.
 - For alcohol_content: using "ABV" alone (without "Alc." and "Vol.") is FAIL.
 - Respond ONLY with the JSON object — no explanation, no markdown fences.
 """
