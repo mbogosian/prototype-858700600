@@ -41,6 +41,7 @@ Public API:
 
 import logging
 import os
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -50,6 +51,9 @@ from PIL import Image
 from proofreader.models import Page1Result, Reason
 
 logger = logging.getLogger(__name__)
+
+# See annotate._ocr_lock — same rationale: PaddleOCR is not thread-safe.
+_ocr_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Constants derived from form analysis
@@ -108,6 +112,11 @@ def _get_ocr():
         from paddleocr import PaddleOCR
 
         _ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
+        # PaddleOCR's show_log=False calls logging.disable(logging.DEBUG), which
+        # raises the global logging threshold and silences our own INFO logs for
+        # all subsequent pipeline stages. Reset it to NOTSET (no threshold) so
+        # our pipeline logging is unaffected after OCR initialisation.
+        logging.disable(logging.NOTSET)
     return _ocr
 
 
@@ -176,7 +185,8 @@ def _find_anchor_ocr(page_img: Image.Image) -> bool:
 
     ocr = _get_ocr()
     try:
-        result = ocr.ocr(np.array(strip.convert("RGB")), cls=False)
+        with _ocr_lock:
+            result = ocr.ocr(np.array(strip.convert("RGB")), cls=False)
     except Exception as exc:
         logger.warning("OCR inference failed in anchor search (%s); treating as not found", exc)
         return False

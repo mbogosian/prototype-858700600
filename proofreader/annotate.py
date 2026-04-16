@@ -37,6 +37,7 @@ Public API:
 import logging
 import math
 import os
+import threading
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -44,6 +45,11 @@ from PIL import Image, ImageDraw
 from proofreader.models import FieldFinding, LabelFindings, Verdict
 
 logger = logging.getLogger(__name__)
+
+# PaddleOCR is not thread-safe: concurrent calls into the same model instance
+# can corrupt internal state and cause SIGSEGV (which cannot be caught). This
+# lock serialises all OCR inference calls so only one runs at a time.
+_ocr_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Module-level PaddleOCR singleton (expensive to initialise)
@@ -59,6 +65,8 @@ def _get_ocr():
         from paddleocr import PaddleOCR
 
         _ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
+        # Same reset as in pdf._get_ocr() — see comment there.
+        logging.disable(logging.NOTSET)
     return _ocr
 
 
@@ -124,7 +132,8 @@ def _run_ocr(image: Image.Image) -> list[tuple[list[list[float]], str, float]]:
         return []
     ocr = _get_ocr()
     try:
-        result = ocr.ocr(np.array(image.convert("RGB")), cls=False)
+        with _ocr_lock:
+            result = ocr.ocr(np.array(image.convert("RGB")), cls=False)
     except Exception as exc:
         # PaddlePaddle can raise RuntimeError ("could not create a primitive
         # descriptor for a reorder primitive") and similar oneDNN/MKL-DNN
