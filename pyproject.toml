@@ -9,8 +9,7 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.29",
     "pymupdf>=1.24",
-    "paddlepaddle>=2.6,<3",
-    "paddleocr>=2.7,<3",
+    "rapidocr-onnxruntime>=1.3",
     "pillow>=10.3",
     "jinja2>=3.1",
     "watchdog>=4.0",
@@ -44,14 +43,14 @@ branch = true
 # any that are added get run automatically without further config changes.
 testpaths = ["tests", "proofreader"]
 # -m "not integration" is the default so that `uv run pytest` is always safe:
-# integration tests load PaddleOCR (~2 GB RAM) and require sample PDFs.
+# integration tests load RapidOCR and require sample PDFs.
 # To run integration tests: uv run pytest -m integration
 # To run everything:        uv run pytest -m ""
 addopts = "--doctest-modules --import-mode=importlib -m 'not integration'"
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
 # Register custom marks so -m filtering works without warnings.
 markers = [
-    "integration: requires PaddleOCR initialisation and sample PDFs in tests/sample_applications/",
+    "integration: requires RapidOCR initialisation and sample PDFs in tests/sample_applications/",
 ]
 
 [tool.ruff]

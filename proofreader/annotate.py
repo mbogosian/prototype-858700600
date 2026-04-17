@@ -9,8 +9,8 @@ with colored outlines drawn over each located field:
   Dashed outline — location approximate (curved text; OCR could not localize)
   No box — ABSENT, INDETERMINATE, ERROR (report text only)
 
-Text localization uses PaddleOCR to match extracted field text back to pixel
-coordinates in the label zone. PaddleOCR returns four-point quadrilateral
+Text localization uses EasyOCR to match extracted field text back to pixel
+coordinates in the label zone. EasyOCR returns four-point quadrilateral
 coordinates; we draw these natively using ImageDraw line segments rather than
 converting to axis-aligned rectangles.
 
@@ -36,44 +36,14 @@ Public API:
 
 import logging
 import math
-import os
-import threading
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from proofreader.models import FieldFinding, LabelFindings, Verdict
+from proofreader.models import LabelFindings, Verdict
+from proofreader.ocr import get_engine, ocr_lock
 
 logger = logging.getLogger(__name__)
-
-# PaddleOCR is not thread-safe: concurrent calls into the same model instance
-# can corrupt internal state and cause SIGSEGV (which cannot be caught). This
-# lock serialises all OCR inference calls so only one runs at a time.
-_ocr_lock = threading.Lock()
-
-# ---------------------------------------------------------------------------
-# Module-level PaddleOCR singleton (expensive to initialise)
-# ---------------------------------------------------------------------------
-
-_ocr = None
-
-
-def _get_ocr():
-    global _ocr
-    if _ocr is None:
-        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        # Same three-vector monkeypatch as in pdf._get_ocr() — see comment there.
-        # Whichever module initialises PaddleOCR first installs the patches; the
-        # second call is a no-op since the singleton check guards entry.
-        logging.disable = lambda level=logging.CRITICAL: None  # type: ignore[method-assign]
-        logging.basicConfig = lambda **kwargs: None  # type: ignore[method-assign]
-        logging.getLogger().setLevel = lambda level: None  # block root-level changes
-        from paddleocr import PaddleOCR
-
-        _ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-        for _name in ("ppocr", "paddle", "paddleocr", "ppdet"):
-            logging.getLogger(_name).setLevel(logging.WARNING)
-    return _ocr
 
 
 # ---------------------------------------------------------------------------
@@ -106,11 +76,9 @@ _GAP_LEN = 6
 # the image border.
 _APPROX_INSET = 4
 
-# PaddlePaddle's Conv2dTranspose shape inference can segfault on images that
-# are very small or very large. These bounds guard _run_ocr; images outside
-# the range are skipped and all fields fall back to dashed approximate outlines.
-# Upper bound chosen conservatively — label zones at 300 DPI are typically
-# ~2400 x 1200 px; anything larger suggests a rendering anomaly.
+# Guard against pathological image sizes. Label zones at 300 DPI are typically
+# ~2400 x 1200 px; images outside these bounds suggest a rendering anomaly and
+# are skipped so all fields fall back to dashed approximate outlines.
 _OCR_MIN_DIM = 32    # px — shorter side must be at least this
 _OCR_MAX_DIM = 4000  # px — longer side must be no more than this
 
@@ -121,13 +89,11 @@ _OCR_MAX_DIM = 4000  # px — longer side must be no more than this
 
 
 def _run_ocr(image: Image.Image) -> list[tuple[list[list[float]], str, float]]:
-    """Run PaddleOCR on image; return (quad, text, confidence) triples.
+    """Run RapidOCR on image; return (quad, text, confidence) triples.
 
     quad is a list of four [x, y] points in clockwise order. An empty list
     is returned when OCR finds no text, the result is malformed, or the image
-    falls outside the safe size range (_OCR_MIN_DIM / _OCR_MAX_DIM). Images
-    outside that range skip OCR entirely — PaddlePaddle's native inference can
-    segfault on extreme dimensions, taking down the whole process.
+    falls outside the safe size range (_OCR_MIN_DIM / _OCR_MAX_DIM).
     """
     w, h = image.size
     if min(w, h) < _OCR_MIN_DIM or max(w, h) > _OCR_MAX_DIM:
@@ -136,25 +102,16 @@ def _run_ocr(image: Image.Image) -> list[tuple[list[list[float]], str, float]]:
             w, h, _OCR_MIN_DIM, _OCR_MAX_DIM,
         )
         return []
-    ocr = _get_ocr()
+    engine = get_engine()
     try:
-        with _ocr_lock:
-            result = ocr.ocr(np.array(image.convert("RGB")), cls=False)
+        with ocr_lock:
+            result, _ = engine(np.array(image.convert("RGB")))
     except Exception as exc:
-        # PaddlePaddle can raise RuntimeError ("could not create a primitive
-        # descriptor for a reorder primitive") and similar oneDNN/MKL-DNN
-        # errors for certain image sizes or memory layouts. Treat these the
-        # same as an OCR miss: return empty results so the job completes with
-        # dashed approximate outlines rather than dying with ERROR status.
         logger.warning("OCR inference failed (%s); skipping text localization", exc)
         return []
-    if not result or not result[0]:
+    if result is None:
         return []
-    out = []
-    for line in result[0]:
-        quad, (text, conf) = line
-        out.append((quad, text, float(conf)))
-    return out
+    return [(bbox, text, float(conf)) for bbox, text, conf in result]
 
 
 def _normalize(s: str) -> str:

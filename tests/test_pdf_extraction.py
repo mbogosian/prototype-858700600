@@ -1,8 +1,8 @@
 """
 Integration tests for pdf.extract_page1().
 
-Marked @pytest.mark.integration — these tests initialise PaddleOCR (slow, ~10s
-on first run) and require pre-generated sample PDFs in tests/sample_applications/.
+Marked @pytest.mark.integration — these tests initialise RapidOCR and require
+pre-generated sample PDFs in tests/sample_applications/.
 
 Generate the sample PDFs with:
     uv run python tests/make_test_pdf.py
@@ -15,11 +15,8 @@ Skip integration tests (fast unit tests only):
 """
 
 import gc
-import os
 
 import pytest
-
-os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 from pathlib import Path
 

@@ -10,7 +10,7 @@ Responsibilities:
     by pixel-brightness analysis of the three checkbox regions
 
 Both the anchor search and the product-type detection work on the *rendered*
-raster image (via PaddleOCR) so that scanned PDFs at any capture resolution
+raster image (via EasyOCR) so that scanned PDFs at any capture resolution
 are handled the same way as native vector PDFs. For native PDFs, PyMuPDF's
 vector search_for() is tried first as a fast path.
 
@@ -40,8 +40,6 @@ Public API:
 """
 
 import logging
-import os
-import threading
 from pathlib import Path
 
 import numpy as np
@@ -49,11 +47,9 @@ import pymupdf
 from PIL import Image
 
 from proofreader.models import Page1Result, Reason
+from proofreader.ocr import get_engine, ocr_lock
 
 logger = logging.getLogger(__name__)
-
-# See annotate._ocr_lock — same rationale: PaddleOCR is not thread-safe.
-_ocr_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Constants derived from form analysis
@@ -91,50 +87,6 @@ _CHECKBOX_DARK_THRESHOLD = 200
 # Minimum OCR confidence to trust a text hit
 _OCR_CONF_MIN = 0.6
 
-# ---------------------------------------------------------------------------
-# Module-level PaddleOCR singleton (expensive to initialise)
-# ---------------------------------------------------------------------------
-
-_ocr = None
-
-
-def _get_ocr():
-    global _ocr
-    if _ocr is None:
-        # Disables PaddlePaddle's model provenance annotation check, which produces
-        # false positives in containerised/offline environments. This is not a
-        # cryptographic signature check, so disabling it does not meaningfully weaken
-        # integrity: models are downloaded over HTTPS from Paddle's CDN on first use
-        # and cached. For stronger guarantees in production, pin the model version
-        # and verify SHA256 hashes at container build time instead.
-        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-
-        # Paddle's C extension mutates global Python logging state during model
-        # loading — from both the constructor call and background threads that can
-        # fire after it returns. Three known attack vectors, all patched here:
-        #
-        #   1. logging.disable(level)          — sets manager.disable globally
-        #   2. logging.basicConfig(level=...)  — adds handler to root logger and
-        #                                        may raise its level
-        #   3. logging.getLogger().setLevel()  — raises root logger level to
-        #                                        WARNING, silencing our INFO logs
-        #
-        # The patches are permanent because background threads can fire at any
-        # time; a temporary patch restored after the constructor would still lose
-        # the race. Setting instance attributes on the root Logger object shadows
-        # the class method for that object only, so child loggers are unaffected.
-        # We silence Paddle's own named loggers directly below.
-        logging.disable = lambda level=logging.CRITICAL: None  # type: ignore[method-assign]
-        logging.basicConfig = lambda **kwargs: None  # type: ignore[method-assign]
-        logging.getLogger().setLevel = lambda level: None  # block root-level changes
-
-        # Import deferred so the module loads without paddle if OCR isn't needed
-        from paddleocr import PaddleOCR
-
-        _ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-        for _name in ("ppocr", "paddle", "paddleocr", "ppdet"):
-            logging.getLogger(_name).setLevel(logging.WARNING)
-    return _ocr
 
 
 # ---------------------------------------------------------------------------
@@ -200,17 +152,16 @@ def _find_anchor_ocr(page_img: Image.Image) -> bool:
     y1 = min(page_img.height, cy + margin)
     strip = page_img.crop((0, y0, page_img.width, y1))
 
-    ocr = _get_ocr()
+    engine = get_engine()
     try:
-        with _ocr_lock:
-            result = ocr.ocr(np.array(strip.convert("RGB")), cls=False)
+        with ocr_lock:
+            result, _ = engine(np.array(strip.convert("RGB")))
     except Exception as exc:
         logger.warning("OCR inference failed in anchor search (%s); treating as not found", exc)
         return False
-    if not result or not result[0]:
+    if result is None:
         return False
-    for line in result[0]:
-        _box, (text, conf) = line
+    for _bbox, text, conf in result:
         if "AFFIX" in text.upper() and conf >= _OCR_CONF_MIN:
             return True
     return False
