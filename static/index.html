@@ -452,9 +452,10 @@ function cardHtml(job) {
   const id = esc(job.job_id);
   const fn = esc(job.original_filename ?? job.job_id);
   return `<div class="job-card">
-  <img class="job-thumb" src="/results/${id}/thumbnail.jpg"
-       onerror="this.style.display='none';this.nextSibling.style.display='flex';" alt="">
-  <div class="job-thumb-placeholder" style="display:none">📄</div>
+  <div class="job-thumb-placeholder">📄</div>
+  <img class="job-thumb" src="/results/${id}/thumbnail.jpg" style="display:none"
+       onload="this.previousElementSibling.style.display='none';this.style.display='';"
+       onerror="" alt="">
   <div class="job-meta">
     <div class="job-filename" title="${fn}">${fn}</div>
     <div class="job-status-row">
