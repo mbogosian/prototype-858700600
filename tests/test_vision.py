@@ -9,11 +9,9 @@ import json
 from unittest.mock import MagicMock, patch
 
 import anthropic
-import pytest
 
 from proofreader.models import Verdict
 from proofreader.vision import ClaudeReader, _parse_response
-
 
 # ---------------------------------------------------------------------------
 # _parse_response — valid inputs

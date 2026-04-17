@@ -14,15 +14,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from proofreader.models import FieldFinding, LabelFindings, Page1Result, Reason, Verdict
 from proofreader import worker
-from proofreader.worker import _process, _set_job, _jobs, _jobs_lock
+from proofreader.models import LabelFindings, Page1Result, Reason, Verdict
+from proofreader.worker import _jobs, _jobs_lock, _process, _set_job
 from tests.fake_readers import (
     FakeLabelReader,
     findings_with_fail,
     findings_with_warn,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -47,7 +46,7 @@ def _blank_image(w: int = 100, h: int = 100) -> Image.Image:
     return Image.new("RGB", (w, h), color=(240, 240, 240))
 
 
-def _page1_success(product_type: str = "wine") -> Page1Result:
+def _page1_success(product_type: str | None = "wine") -> Page1Result:
     """A Page1Result representing successful extraction."""
     return Page1Result(
         reason=None,
@@ -114,6 +113,7 @@ def test_process_happy_path_fail(tmp_path: Path) -> None:
     _run_process(tmp_path, _page1_success("wine"), findings=findings_with_fail(), job_id="test002")
 
     job = _jobs.get("test002")
+    assert job is not None
     assert job["verdict"] == Verdict.FAIL.name
 
 
@@ -122,6 +122,7 @@ def test_process_happy_path_warn(tmp_path: Path) -> None:
     _run_process(tmp_path, _page1_success("wine"), findings=findings_with_warn(), job_id="test003")
 
     job = _jobs.get("test003")
+    assert job is not None
     assert job["verdict"] == Verdict.WARN.name
 
 
@@ -180,6 +181,7 @@ def test_process_terminal_state_job_marked_indeterminate(tmp_path: Path, reason:
         _process(fake_pdf, "test006", tmp_path)
 
     job = _jobs.get("test006")
+    assert job is not None
     assert job["status"] == "complete"
     assert job["verdict"] == Verdict.INDETERMINATE.name
 
@@ -200,6 +202,7 @@ def test_process_api_error_verdict_propagated(tmp_path: Path) -> None:
     )
 
     job = _jobs.get("test007")
+    assert job is not None
     assert job["verdict"] == Verdict.ERROR.name
 
 
@@ -352,27 +355,34 @@ def _call_start(inbox: Path, outbox: Path) -> None:
     """Call worker.start() with mocked ThreadPoolExecutor and Observer."""
     loop = asyncio.new_event_loop()
     try:
-        with patch("proofreader.worker.ThreadPoolExecutor"), \
-             patch("proofreader.worker.Observer"):
+        with patch("proofreader.worker.ThreadPoolExecutor"), patch("proofreader.worker.Observer"):
             worker.start(inbox, outbox, 1, loop)
     finally:
         loop.close()
 
 
-def _make_completed_job(outbox: Path, job_id: str, verdict: str = "PASS",
-                         original_filename: str | None = "label.pdf",
-                         submitted_at: float | None = 1_700_000_000.0) -> Path:
+def _make_completed_job(
+    outbox: Path,
+    job_id: str,
+    verdict: str = "PASS",
+    original_filename: str | None = "label.pdf",
+    submitted_at: float | None = 1_700_000_000.0,
+) -> Path:
     """Write a minimal complete job directory to outbox; return the job dir."""
     job_dir = outbox / job_id
     job_dir.mkdir(parents=True)
     (job_dir / "report.html").write_text("<!DOCTYPE html><html></html>")
-    (job_dir / "findings.json").write_text(json.dumps({
-        "job_id": job_id,
-        "verdict": verdict,
-        "original_filename": original_filename,
-        "submitted_at": submitted_at,
-        "fields": [],
-    }))
+    (job_dir / "findings.json").write_text(
+        json.dumps(
+            {
+                "job_id": job_id,
+                "verdict": verdict,
+                "original_filename": original_filename,
+                "submitted_at": submitted_at,
+                "fields": [],
+            }
+        )
+    )
     return job_dir
 
 
@@ -390,7 +400,9 @@ def test_start_reinflates_completed_job(tmp_path: Path, worker_globals_reset) ->
     assert job["verdict"] == "PASS"
 
 
-def test_start_reinflates_original_filename_and_submitted_at(tmp_path: Path, worker_globals_reset) -> None:
+def test_start_reinflates_original_filename_and_submitted_at(
+    tmp_path: Path, worker_globals_reset
+) -> None:
     """Re-inflated job carries original_filename and submitted_at from findings.json."""
     inbox = tmp_path / "inbox"
     outbox = tmp_path / "outbox"
@@ -399,6 +411,7 @@ def test_start_reinflates_original_filename_and_submitted_at(tmp_path: Path, wor
     _call_start(inbox, outbox)
 
     job = worker.get_job("ddeeff")
+    assert job is not None
     assert job["original_filename"] == "chardonnay.pdf"
     assert job["submitted_at"] == 42.5
 
@@ -409,7 +422,9 @@ def test_start_skips_outbox_dir_without_report_html(tmp_path: Path, worker_globa
     outbox = tmp_path / "outbox"
     job_dir = outbox / "incomplete"
     job_dir.mkdir(parents=True)
-    (job_dir / "findings.json").write_text(json.dumps({"job_id": "incomplete", "verdict": "PASS", "fields": []}))
+    (job_dir / "findings.json").write_text(
+        json.dumps({"job_id": "incomplete", "verdict": "PASS", "fields": []})
+    )
 
     _call_start(inbox, outbox)
 
@@ -513,7 +528,7 @@ def test_delete_job_returns_false_for_unknown_job() -> None:
 def test_delete_job_rejects_queued_job() -> None:
     _set_job("del005", status="queued")
     assert worker.delete_job("del005") is False
-    assert worker.get_job("del005") is not None   # still present
+    assert worker.get_job("del005") is not None  # still present
 
 
 def test_delete_job_rejects_processing_job() -> None:
@@ -560,7 +575,7 @@ def _make_complete_job_with_pdf(outbox: Path, job_id: str) -> None:
 
 
 def test_requeue_job_returns_true_for_complete(set_inbox_and_outbox) -> None:
-    inbox, outbox = set_inbox_and_outbox
+    _inbox, outbox = set_inbox_and_outbox
     _make_complete_job_with_pdf(outbox, "rq001")
     _set_job("rq001", status="complete", verdict="PASS", original_filename="label.pdf")
     with patch("proofreader.worker._queue"):
@@ -568,7 +583,7 @@ def test_requeue_job_returns_true_for_complete(set_inbox_and_outbox) -> None:
 
 
 def test_requeue_job_returns_true_for_error(set_inbox_and_outbox) -> None:
-    inbox, outbox = set_inbox_and_outbox
+    _inbox, outbox = set_inbox_and_outbox
     _make_complete_job_with_pdf(outbox, "rq002")
     _set_job("rq002", status="error", verdict="ERROR", original_filename="label.pdf")
     with patch("proofreader.worker._queue"):
@@ -590,7 +605,7 @@ def test_requeue_job_returns_false_for_processing() -> None:
 
 
 def test_requeue_job_returns_false_when_original_pdf_missing(set_inbox_and_outbox) -> None:
-    inbox, outbox = set_inbox_and_outbox
+    _inbox, outbox = set_inbox_and_outbox
     job_dir = outbox / "rq005"
     job_dir.mkdir()
     # No original.pdf
@@ -609,7 +624,7 @@ def test_requeue_job_moves_pdf_to_inbox(set_inbox_and_outbox) -> None:
 
 
 def test_requeue_job_deletes_processed_outputs(set_inbox_and_outbox) -> None:
-    inbox, outbox = set_inbox_and_outbox
+    _inbox, outbox = set_inbox_and_outbox
     _make_complete_job_with_pdf(outbox, "rq007")
     _set_job("rq007", status="complete", verdict="PASS", original_filename="label.pdf")
     with patch("proofreader.worker._queue"):
@@ -621,13 +636,19 @@ def test_requeue_job_deletes_processed_outputs(set_inbox_and_outbox) -> None:
 
 
 def test_requeue_job_resets_state_to_queued(set_inbox_and_outbox) -> None:
-    inbox, outbox = set_inbox_and_outbox
+    _inbox, outbox = set_inbox_and_outbox
     _make_complete_job_with_pdf(outbox, "rq008")
-    _set_job("rq008", status="complete", verdict="PASS", original_filename="label.pdf",
-             logs=["old log line"])
+    _set_job(
+        "rq008",
+        status="complete",
+        verdict="PASS",
+        original_filename="label.pdf",
+        logs=["old log line"],
+    )
     with patch("proofreader.worker._queue"):
         worker.requeue_job("rq008")
     job = worker.get_job("rq008")
+    assert job is not None
     assert job["status"] == "queued"
     assert job["verdict"] is None
     assert job["logs"] == []
@@ -642,6 +663,7 @@ def test_requeue_job_writes_sidecar(set_inbox_and_outbox) -> None:
     sidecar = inbox / "rq009.json"
     assert sidecar.exists()
     import json
+
     meta = json.loads(sidecar.read_text())
     assert meta["job_id"] == "rq009"
     assert meta["original_filename"] == "my_label.pdf"

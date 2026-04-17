@@ -14,7 +14,6 @@ from PIL import Image
 from proofreader.models import FieldFinding, LabelFindings, Page1Result, Reason, Verdict
 from proofreader.report import render, render_terminal
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -246,7 +245,9 @@ def test_render_report_html_contains_extracted_text(tmp_path: Path) -> None:
 
 
 def test_render_report_html_contains_product_type(tmp_path: Path) -> None:
-    render("abc123", _page1_success("distilled_spirits"), _blank_image(), _passing_findings(), tmp_path)
+    render(
+        "abc123", _page1_success("distilled_spirits"), _blank_image(), _passing_findings(), tmp_path
+    )
     html = (tmp_path / "report.html").read_text()
     assert "distilled_spirits" in html
 
@@ -296,7 +297,7 @@ def test_render_base64_image_is_decodable(tmp_path: Path) -> None:
     html = (tmp_path / "report.html").read_text()
 
     # Extract the base64 payload from the img src attribute.
-    marker = 'data:image/jpeg;base64,'
+    marker = "data:image/jpeg;base64,"
     start = html.index(marker) + len(marker)
     # The value ends at the closing quote of the src attribute.
     end = html.index('"', start)
@@ -304,6 +305,7 @@ def test_render_base64_image_is_decodable(tmp_path: Path) -> None:
 
     raw = base64.b64decode(b64_data)
     import io as _io
+
     img = Image.open(_io.BytesIO(raw))
     assert img.format == "JPEG"
 
@@ -321,7 +323,11 @@ def test_render_no_logs_section_when_empty(tmp_path: Path) -> None:
 
 def test_render_logs_section_present(tmp_path: Path) -> None:
     render(
-        "abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path,
+        "abc123",
+        _page1_success(),
+        _blank_image(),
+        _passing_findings(),
+        tmp_path,
         logs=["stage start", "stage end"],
     )
     html = (tmp_path / "report.html").read_text()
@@ -332,7 +338,11 @@ def test_render_logs_section_present(tmp_path: Path) -> None:
 
 def test_render_logs_html_escaped(tmp_path: Path) -> None:
     render(
-        "abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path,
+        "abc123",
+        _page1_success(),
+        _blank_image(),
+        _passing_findings(),
+        tmp_path,
         logs=["<b>bold log line</b>"],
     )
     html = (tmp_path / "report.html").read_text()
@@ -372,7 +382,11 @@ def test_terminal_findings_json_original_filename_none_by_default(tmp_path: Path
 
 def test_render_findings_json_includes_original_filename(tmp_path: Path) -> None:
     render(
-        "abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path,
+        "abc123",
+        _page1_success(),
+        _blank_image(),
+        _passing_findings(),
+        tmp_path,
         original_filename="wine_label.pdf",
     )
     data = json.loads((tmp_path / "findings.json").read_text())
@@ -381,7 +395,11 @@ def test_render_findings_json_includes_original_filename(tmp_path: Path) -> None
 
 def test_render_findings_json_includes_submitted_at(tmp_path: Path) -> None:
     render(
-        "abc123", _page1_success(), _blank_image(), _passing_findings(), tmp_path,
+        "abc123",
+        _page1_success(),
+        _blank_image(),
+        _passing_findings(),
+        tmp_path,
         submitted_at=1_700_000_000.0,
     )
     data = json.loads((tmp_path / "findings.json").read_text())

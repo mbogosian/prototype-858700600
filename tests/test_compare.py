@@ -6,7 +6,7 @@ All tests are pure Python — no PaddleOCR, no API calls, no file I/O.
 
 import pytest
 
-from proofreader.compare import assess, _append
+from proofreader.compare import _append, assess
 from proofreader.models import FieldFinding, LabelFindings, Verdict
 
 # ---------------------------------------------------------------------------
@@ -148,8 +148,8 @@ def test_item15_softening_does_not_lower_overall_verdict() -> None:
     f2 = FieldFinding(field="brand_name", verdict=Verdict.FAIL)
     result = assess(_findings(f1, f2), product_type=None)
     assert result.fields[0].verdict is Verdict.ABSENT  # net_contents softened
-    assert result.fields[1].verdict is Verdict.FAIL    # brand_name unchanged
-    assert result.verdict is Verdict.FAIL              # worst-case still FAIL
+    assert result.fields[1].verdict is Verdict.FAIL  # brand_name unchanged
+    assert result.verdict is Verdict.FAIL  # worst-case still FAIL
 
 
 # ---------------------------------------------------------------------------

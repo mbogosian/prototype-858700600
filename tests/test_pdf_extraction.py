@@ -15,10 +15,9 @@ Skip integration tests (fast unit tests only):
 """
 
 import gc
+from pathlib import Path
 
 import pytest
-
-from pathlib import Path
 
 from proofreader.models import Page1Result, Reason
 from proofreader.pdf import extract_page1

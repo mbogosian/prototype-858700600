@@ -16,7 +16,7 @@ annotation and report stages.
 
 **Wine alcohol_content conditionality (27 CFR Part 4)**
     ABV is mandatory on wine labels only when the product exceeds 14% ABV.
-    At 7–14% ABV with a "table wine" or "light wine" designation it is
+    At 7-14% ABV with a "table wine" or "light wine" designation it is
     optional. If the vision model flags ABV as ABSENT or FAIL on a wine
     label, a note is appended to prompt the reviewer to confirm the actual
     ABV before treating the finding as non-compliant.
@@ -78,7 +78,7 @@ def _apply_excusals(field: FieldFinding, product_type: str | None) -> FieldFindi
             ),
         )
 
-    # Wine ABV conditionality: mandatory only if >14%; optional at 7–14% with
+    # Wine ABV conditionality: mandatory only if >14%; optional at 7-14% with
     # "table wine" or "light wine" designation. A note is appended to prompt
     # the reviewer to verify before treating the absence as non-compliant.
     if (
@@ -90,7 +90,7 @@ def _apply_excusals(field: FieldFinding, product_type: str | None) -> FieldFindi
             field,
             note=_append(
                 field.note,
-                "wine ABV is mandatory only if >14%; optional at 7–14% ABV with "
+                "wine ABV is mandatory only if >14%; optional at 7-14% ABV with "
                 "'table wine' or 'light wine' designation — verify actual ABV "
                 "before treating this finding as non-compliant",
             ),

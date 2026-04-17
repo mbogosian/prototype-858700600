@@ -36,6 +36,7 @@ Public API:
 
 import logging
 import math
+from collections.abc import Sequence
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -150,7 +151,7 @@ def _find_matching_quads(
 
 def _draw_quad(
     draw: ImageDraw.ImageDraw,
-    quad: list[list[float]],
+    quad: Sequence[Sequence[int | float]],
     color: tuple[int, int, int],
     width: int = _OUTLINE_WIDTH,
 ) -> None:

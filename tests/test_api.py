@@ -14,7 +14,6 @@ from main import app
 from proofreader import worker
 from proofreader.worker import _jobs, _jobs_lock
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

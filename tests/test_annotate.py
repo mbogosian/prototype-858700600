@@ -5,22 +5,21 @@ All tests are fast: PaddleOCR is patched out via proofreader.annotate._run_ocr.
 Image pixel comparisons use numpy to verify that drawing actually modified pixels.
 """
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 from PIL import Image
-from unittest.mock import patch
 
 from proofreader.annotate import (
-    _normalize,
-    _find_matching_quads,
-    _draw_quad,
-    _draw_dashed_rect,
-    annotate,
     _VERDICT_COLORS,
-    _OUTLINE_WIDTH,
+    _draw_dashed_rect,
+    _draw_quad,
+    _find_matching_quads,
+    _normalize,
+    annotate,
 )
 from proofreader.models import FieldFinding, LabelFindings, Verdict
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -144,6 +143,7 @@ def test_find_matching_quads_empty_ocr() -> None:
 def test_draw_quad_modifies_pixels() -> None:
     img = _white_image()
     from PIL import ImageDraw
+
     draw = ImageDraw.Draw(img)
     quad = [[10, 10], [60, 10], [60, 40], [10, 40]]
     _draw_quad(draw, quad, color=(0, 200, 0))
@@ -158,6 +158,7 @@ def test_draw_quad_does_not_fill_interior() -> None:
     """Outline only — interior pixels should remain white."""
     img = _white_image(100, 100)
     from PIL import ImageDraw
+
     draw = ImageDraw.Draw(img)
     quad = [[10, 10], [90, 10], [90, 90], [10, 90]]
     _draw_quad(draw, quad, color=(200, 0, 0))
@@ -175,6 +176,7 @@ def test_draw_quad_does_not_fill_interior() -> None:
 def test_draw_dashed_rect_modifies_pixels() -> None:
     img = _white_image(200, 200)
     from PIL import ImageDraw
+
     draw = ImageDraw.Draw(img)
     _draw_dashed_rect(draw, (10, 10, 190, 190), color=(255, 140, 0))
     arr = np.array(img)
@@ -187,6 +189,7 @@ def test_draw_dashed_rect_modifies_pixels() -> None:
 def test_draw_dashed_rect_does_not_fill_interior() -> None:
     img = _white_image(200, 200)
     from PIL import ImageDraw
+
     draw = ImageDraw.Draw(img)
     _draw_dashed_rect(draw, (10, 10, 190, 190), color=(200, 0, 0))
     arr = np.array(img)
@@ -226,7 +229,11 @@ def test_annotate_does_not_modify_original() -> None:
             img,
             LabelFindings(
                 verdict=Verdict.PASS,
-                fields=[FieldFinding(field="brand_name", verdict=Verdict.PASS, extracted="Example Brand")],
+                fields=[
+                    FieldFinding(
+                        field="brand_name", verdict=Verdict.PASS, extracted="Example Brand"
+                    )
+                ],
             ),
         )
     assert np.array_equal(np.array(img), original_data)
@@ -311,7 +318,11 @@ def test_annotate_fail_uses_red() -> None:
     img = _white_image(200, 200)
     findings = LabelFindings(
         verdict=Verdict.FAIL,
-        fields=[FieldFinding(field="government_warning", verdict=Verdict.FAIL, extracted="Government Warning")],
+        fields=[
+            FieldFinding(
+                field="government_warning", verdict=Verdict.FAIL, extracted="Government Warning"
+            )
+        ],
     )
     with patch(
         "proofreader.annotate._run_ocr",
@@ -339,7 +350,9 @@ def test_annotate_draws_dashed_rect_on_ocr_miss() -> None:
     img = _white_image(200, 200)
     findings = LabelFindings(
         verdict=Verdict.WARN,
-        fields=[FieldFinding(field="brand_name", verdict=Verdict.WARN, extracted="Curved Brand Name")],
+        fields=[
+            FieldFinding(field="brand_name", verdict=Verdict.WARN, extracted="Curved Brand Name")
+        ],
     )
     with patch("proofreader.annotate._run_ocr", return_value=[]):
         result = annotate(img, findings)
@@ -383,7 +396,9 @@ def test_annotate_mixed_findings_only_draws_for_annotatable() -> None:
         verdict=Verdict.FAIL,
         fields=[
             FieldFinding(field="brand_name", verdict=Verdict.PASS, extracted="Example Brand"),
-            FieldFinding(field="government_warning", verdict=Verdict.FAIL, extracted="Government Warning"),
+            FieldFinding(
+                field="government_warning", verdict=Verdict.FAIL, extracted="Government Warning"
+            ),
             FieldFinding(field="net_contents", verdict=Verdict.ABSENT),  # no annotation
         ],
     )
@@ -403,6 +418,6 @@ def test_annotate_mixed_findings_only_draws_for_annotatable() -> None:
     assert np.any(
         (arr[:, :, 0] == green[0]) & (arr[:, :, 1] == green[1]) & (arr[:, :, 2] == green[2])
     ), "expected green pixels for PASS field"
-    assert np.any(
-        (arr[:, :, 0] == red[0]) & (arr[:, :, 1] == red[1]) & (arr[:, :, 2] == red[2])
-    ), "expected red pixels for FAIL field"
+    assert np.any((arr[:, :, 0] == red[0]) & (arr[:, :, 1] == red[1]) & (arr[:, :, 2] == red[2])), (
+        "expected red pixels for FAIL field"
+    )

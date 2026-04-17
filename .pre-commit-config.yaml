@@ -1,0 +1,51 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: check-yaml
+        args: [--unsafe]
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        args: [--toml, pyproject.toml]
+        additional_dependencies:
+          - tomli
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9
+    hooks:
+      - id: ruff-check
+        entry: uv run ruff check
+        args: [--fix]
+      - id: ruff-format
+        entry: uv run ruff format
+
+  - repo: meta
+    hooks:
+    - id: check-useless-excludes
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        entry: uv run ty
+        args: [check]
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
