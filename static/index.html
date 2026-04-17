@@ -177,7 +177,10 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
 .badge-WARN,          .badge-ABSENT        { background: #fff3cd; color: #856404; }
 .badge-FAIL,          .badge-ERROR         { background: #f8d7da; color: #721c24; }
 .badge-INDETERMINATE                       { background: #e2e3e5; color: #383d41; }
-.badge-queued,        .badge-processing    { background: #e2e3e5; color: #383d41; }
+.badge-queued,        .badge-processing,
+.badge-uploading                           { background: #e2e3e5; color: #383d41; }
+
+.job-card.uploading { opacity: 0.5; }
 
 .btn-report {
   display: inline-block;
@@ -390,7 +393,7 @@ const queries       = { queued: "", progress: "", done: "" };
 const PANES = [
   {
     key:    "queued",
-    filter: j => j.status === "queued",
+    filter: j => j.status === "uploading" || j.status === "queued",
     sort:   (a, b) => (a.submitted_at ?? 0) - (b.submitted_at ?? 0),   // asc: oldest first
   },
   {
@@ -414,6 +417,8 @@ function esc(s) {
 }
 
 function verdictBadge(job) {
+  if (job.status === "uploading")
+    return `<span class="badge badge-uploading"><span class="spinner"></span>UPLOADING</span>`;
   if (job.status === "queued")
     return `<span class="badge badge-queued">QUEUED</span>`;
   if (job.status === "processing")
@@ -451,7 +456,8 @@ function deleteButton(job) {
 function cardHtml(job) {
   const id = esc(job.job_id);
   const fn = esc(job.original_filename ?? job.job_id);
-  return `<div class="job-card">
+  const uploadingClass = job.status === "uploading" ? " uploading" : "";
+  return `<div class="job-card${uploadingClass}">
   <div class="job-thumb-placeholder">📄</div>
   <img class="job-thumb" src="/results/${id}/thumbnail.jpg" style="display:none"
        onload="this.previousElementSibling.style.display='none';this.style.display='';"
@@ -531,16 +537,32 @@ async function uploadFiles(files) {
     Notification.requestPermission();
   }
 
+  // Insert ghost entries so the user sees immediate feedback while uploading.
+  const ghostIds = pdfs.map(f => {
+    const ghostId = "upload-" + Math.random().toString(36).slice(2, 10);
+    jobs.set(ghostId, {
+      job_id:            ghostId,
+      status:            "uploading",
+      original_filename: f.name,
+      verdict:           null,
+      submitted_at:      Date.now() / 1000,
+    });
+    return { ghostId, filename: f.name };
+  });
+  renderAll();
+
   const form = new FormData();
   pdfs.forEach(f => form.append("files", f));
 
   let results;
   try {
     const resp = await fetch("/upload", { method: "POST", body: form });
-    if (!resp.ok) return;
+    if (!resp.ok) { ghostIds.forEach(({ ghostId }) => jobs.delete(ghostId)); renderAll(); return; }
     results = await resp.json();
-  } catch (_) { return; }
+  } catch (_) { ghostIds.forEach(({ ghostId }) => jobs.delete(ghostId)); renderAll(); return; }
 
+  // Remove ghosts and insert real job entries.
+  ghostIds.forEach(({ ghostId }) => jobs.delete(ghostId));
   for (const r of results) {
     if (r.job_id) {
       jobs.set(r.job_id, {
