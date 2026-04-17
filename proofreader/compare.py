@@ -30,6 +30,11 @@ annotation and report stages.
     The overall verdict is recalculated as the worst-case across all fields
     after excusals are applied.
 
+**Note/verdict mismatch detection**
+    If the model's note text contains language indicating a more severe verdict
+    than the assigned verdict (e.g., note says "FAIL" but verdict is PASS), the
+    field is escalated to WARN and the inconsistency is flagged for human review.
+
 Public API:
     assess(findings, product_type) -> LabelFindings
 """
@@ -55,7 +60,7 @@ def assess(findings: LabelFindings, product_type: str | None) -> LabelFindings:
     Produces a new LabelFindings with excusals applied and the overall
     verdict re-rolled from the updated fields.
     """
-    updated = [_apply_excusals(f, product_type) for f in findings.fields]
+    updated = [_check_note_mismatch(_apply_excusals(f, product_type)) for f in findings.fields]
     overall = (
         max((f.verdict for f in updated), key=lambda v: v.value) if updated else findings.verdict
     )
@@ -117,6 +122,32 @@ def _apply_excusals(field: FieldFinding, product_type: str | None) -> FieldFindi
             ),
         )
 
+    return field
+
+
+def _check_note_mismatch(field: FieldFinding) -> FieldFinding:
+    """Escalate to WARN when the note text implies a worse verdict than assigned.
+
+    Catches cases where the model writes 'this is a FAIL' or 'WARN issued' in
+    the note but emits a less severe structured verdict — a known failure mode
+    where reasoning and output diverge.
+    """
+    if field.verdict not in (Verdict.PASS, Verdict.EXEMPT) or not field.note:
+        return field
+
+    note_upper = field.note.upper()
+    # Look for explicit severity signals in the note text.
+    mismatch_signals = ("FAIL", "NON-COMPLIANT", "DOES NOT COMPLY", "VIOLATION")
+    if any(signal in note_upper for signal in mismatch_signals):
+        return replace(
+            field,
+            verdict=Verdict.WARN,
+            note=_append(
+                field.note,
+                "verdict escalated from PASS: note text indicated a compliance "
+                "issue inconsistent with the assigned verdict — human review required",
+            ),
+        )
     return field
 
 

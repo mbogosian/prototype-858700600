@@ -126,17 +126,28 @@ _FIELD_DESCRIPTIONS: dict[str, str] = {
     ),
     "producer_bottler_name_address": (
         "Name and address of the producer, bottler, or importer. Must be present. "
-        "For domestic products: 'Bottled by' or 'Produced by' with city and state. "
+        "For domestic products: a name and city + state is sufficient — street address "
+        "and zip code are not required. "
+        "Acceptable bottling claim phrases (all are TTB-enumerated and should not trigger "
+        "a WARN on terminology alone): 'Bottled by', 'Produced and bottled by', "
+        "'Vinted and bottled by', 'Blended and bottled by', 'Made and bottled by', "
+        "'Distilled and bottled by', 'Brewed and bottled by', 'Brewed and canned by', "
+        "'Manufactured by', 'Packed by', 'Imported by'. "
         "For imports: importer name and US address is also required."
     ),
     "government_warning": (
-        "The mandatory government warning statement. EXACT required text: "
+        "The mandatory government warning statement. Required wording (content must match; "
+        "see capitalization note below): "
         "'GOVERNMENT WARNING: (1) According to the Surgeon General, women should not "
         "drink alcoholic beverages during pregnancy because of the risk of birth defects. "
         "(2) Consumption of alcoholic beverages impairs your ability to drive a car or "
         "operate machinery, and may cause health problems.' "
-        "Format requirements: 'GOVERNMENT WARNING:' must appear in ALL CAPITAL LETTERS "
-        "and in visibly heavier (bold) type than the body of the warning statement. "
+        "Capitalization: 'GOVERNMENT WARNING:' must be in ALL CAPS. The body text may "
+        "appear in mixed case OR all-caps — both are acceptable; do not flag all-caps body "
+        "text as a deviation. FAIL only for missing words, wrong words, or substantively "
+        "altered wording. "
+        "Format requirements: 'GOVERNMENT WARNING:' must appear in visibly heavier (bold) "
+        "type than the body of the warning statement. "
         "Use relative weight: if 'GOVERNMENT WARNING:' is clearly heavier than the surrounding "
         "warning text, that satisfies the requirement. If it is clearly the same weight or lighter, "
         "that is FAIL. If image resolution or compression makes the weight difference genuinely "
@@ -174,9 +185,13 @@ _FIELD_DESCRIPTIONS: dict[str, str] = {
         "three elements can be seen together on a single face of the label."
     ),
     "age_statement": (
-        "Age statement (e.g. 'Aged 12 years', '12 Year Old'). Required when the "
-        "class/type designation implies aging (e.g. 'Straight Bourbon Whiskey', "
-        "'12 Year Old Scotch', 'Aged Rum'). Optional otherwise; note if present."
+        "Age statement (e.g. 'Aged 12 years', '12 Year Old'). "
+        "For straight whiskey (bourbon, rye, etc.): required ONLY if aged less than 4 years "
+        "(27 CFR §5.74). Absence of an age statement on a 'Straight' designation implies "
+        "4 or more years of aging — use ABSENT, not FAIL. "
+        "FAIL only when an age statement is present but incorrect, or the designation "
+        "explicitly implies an age below the regulatory minimum for that class. "
+        "Note if present; otherwise ABSENT."
     ),
     "class_designation": (
         "Malt beverage class designation. Mandatory. Acceptable classes: ale, lager, "
@@ -263,10 +278,22 @@ Rules:
   verdicts. Only set "extracted" to null when the field is genuinely absent from the label.
   The extracted text is used to locate and highlight the field in the label image.
 - If import_indicators is true, add a "country_of_origin" entry to the fields list.
+- When labels in the set contradict each other (e.g. two different alcohol content figures,
+  or an appellation on the front that conflicts with a country of origin on the back): assign
+  FAIL to the field whose value is directly contradicted, and note the contradiction. Do not
+  split the fault across multiple fields — identify the primary conflict and place the FAIL
+  there. For example, if the front says "New York" and the back says "Product of Argentina",
+  the appellation is the contradiction (a foreign wine cannot carry a domestic appellation),
+  so appellation_of_origin is FAIL and country_of_origin is PASS (the import indicator is
+  correctly stated). If two different ABV figures appear, alcohol_content is FAIL regardless
+  of which figure is correct.
 - For the government_warning field: any deviation from the exact required text is FAIL.
-  For bold formatting: FAIL only if "GOVERNMENT WARNING:" is clearly the same weight or lighter
-  than the body of the warning; WARN if weight difference is ambiguous from the image quality.
-  Do not default to FAIL when bold status is uncertain — prefer WARN.
+  For bold formatting of "GOVERNMENT WARNING:": PASS if the prefix visually appears heavier
+  or bolder than the body text — a visible weight difference is sufficient, certainty is not
+  required. WARN only when the prefix and body appear to be the same weight or truly
+  indistinguishable. FAIL only when the prefix is clearly the same weight as or lighter than
+  the body. Do not cite image resolution as a reason to downgrade from PASS to WARN when a
+  weight difference is apparent.
 - Use EXEMPT when a field is absent AND you can affirmatively determine from the label content
   that it is not required for this specific product or designation (e.g., age_statement for a
   product not claiming a designation that implies aging; alcohol_content for a malt beverage
@@ -274,6 +301,9 @@ Rules:
   when the regulatory basis for non-requirement is clear. Use ABSENT when absence is noted but
   you cannot confidently determine whether the field is required.
 - For alcohol_content: using "ABV" alone (without "Alc." and "Vol.") is FAIL.
+- Your note must be consistent with your verdict. Do not write a note that describes a
+  FAIL or WARN condition while assigning a PASS verdict, or vice versa. If your reasoning
+  leads you to a different conclusion than your verdict, correct the verdict before responding.
 - Respond ONLY with the JSON object — no explanation, no markdown fences.
 """
     return prompt

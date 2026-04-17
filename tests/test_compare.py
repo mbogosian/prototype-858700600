@@ -280,6 +280,60 @@ def test_verdict_reroll_independent_of_input_verdict() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Note/verdict mismatch detection
+# ---------------------------------------------------------------------------
+
+
+def test_note_mismatch_pass_with_fail_in_note_escalates_to_warn() -> None:
+    f = FieldFinding(
+        field="government_warning",
+        verdict=Verdict.PASS,
+        note="Content appears correct. However, this constitutes a FAIL due to formatting.",
+    )
+    result = assess(_findings(f), product_type="distilled_spirits")
+    assert result.fields[0].verdict is Verdict.WARN
+    assert "escalated from PASS" in (result.fields[0].note or "")
+    assert result.verdict is Verdict.WARN
+
+
+def test_note_mismatch_exempt_with_noncompliant_in_note_escalates_to_warn() -> None:
+    f = FieldFinding(
+        field="age_statement",
+        verdict=Verdict.EXEMPT,
+        note="Field is non-compliant with required designation.",
+    )
+    result = assess(_findings(f), product_type="distilled_spirits")
+    assert result.fields[0].verdict is Verdict.WARN
+
+
+def test_note_mismatch_pass_with_clean_note_unchanged() -> None:
+    f = FieldFinding(
+        field="brand_name",
+        verdict=Verdict.PASS,
+        note="Brand name clearly visible and correctly formatted.",
+    )
+    result = assess(_findings(f), product_type="wine")
+    assert result.fields[0].verdict is Verdict.PASS
+
+
+def test_note_mismatch_pass_no_note_unchanged() -> None:
+    f = FieldFinding(field="brand_name", verdict=Verdict.PASS)
+    result = assess(_findings(f), product_type="wine")
+    assert result.fields[0].verdict is Verdict.PASS
+
+
+def test_note_mismatch_fail_verdict_not_affected() -> None:
+    """Mismatch detection only escalates PASS/EXEMPT — does not touch FAIL."""
+    f = FieldFinding(
+        field="government_warning",
+        verdict=Verdict.FAIL,
+        note="Correct format. Looks fine.",
+    )
+    result = assess(_findings(f), product_type="wine")
+    assert result.fields[0].verdict is Verdict.FAIL
+
+
+# ---------------------------------------------------------------------------
 # Multiple excusals in a single findings set
 # ---------------------------------------------------------------------------
 
