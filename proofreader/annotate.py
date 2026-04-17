@@ -53,10 +53,10 @@ logger = logging.getLogger(__name__)
 
 # RGB colors for each annotatable verdict.
 _VERDICT_COLORS: dict[Verdict, tuple[int, int, int]] = {
-    Verdict.PASS:   (34, 139, 34),   # forest green
-    Verdict.EXEMPT: (34, 139, 34),   # forest green (same as PASS — absent but not required)
-    Verdict.WARN:   (255, 140, 0),   # dark orange
-    Verdict.FAIL:   (200, 30, 30),   # crimson
+    Verdict.PASS: (34, 139, 34),  # forest green
+    Verdict.EXEMPT: (34, 139, 34),  # forest green (same as PASS — absent but not required)
+    Verdict.WARN: (255, 140, 0),  # dark orange
+    Verdict.FAIL: (200, 30, 30),  # crimson
 }
 
 # Pixel width of drawn outlines.
@@ -80,7 +80,7 @@ _APPROX_INSET = 4
 # Guard against pathological image sizes. Label zones at 300 DPI are typically
 # ~2400 x 1200 px; images outside these bounds suggest a rendering anomaly and
 # are skipped so all fields fall back to dashed approximate outlines.
-_OCR_MIN_DIM = 32    # px — shorter side must be at least this
+_OCR_MIN_DIM = 32  # px — shorter side must be at least this
 _OCR_MAX_DIM = 4000  # px — longer side must be no more than this
 
 
@@ -100,7 +100,10 @@ def _run_ocr(image: Image.Image) -> list[tuple[list[list[float]], str, float]]:
     if min(w, h) < _OCR_MIN_DIM or max(w, h) > _OCR_MAX_DIM:
         logger.warning(
             "Skipping OCR: image size %dx%d is outside safe range [%d, %d]",
-            w, h, _OCR_MIN_DIM, _OCR_MAX_DIM,
+            w,
+            h,
+            _OCR_MIN_DIM,
+            _OCR_MAX_DIM,
         )
         return []
     engine = get_engine()
@@ -235,7 +238,12 @@ def annotate(label_zone: Image.Image, findings: LabelFindings) -> Image.Image:
         return out
 
     ocr_results = _run_ocr(label_zone)
-    approx_bbox = (_APPROX_INSET, _APPROX_INSET, out.width - _APPROX_INSET, out.height - _APPROX_INSET)
+    approx_bbox = (
+        _APPROX_INSET,
+        _APPROX_INSET,
+        out.width - _APPROX_INSET,
+        out.height - _APPROX_INSET,
+    )
 
     for field in annotatable:
         assert field.extracted is not None  # narrowed above

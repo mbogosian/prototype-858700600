@@ -41,10 +41,12 @@ from proofreader.models import FieldFinding, LabelFindings, Verdict
 # Fields whose absence may be excused via Item 15 (embossed/blown container
 # info). A FAIL verdict on these is softened to ABSENT; human review confirms
 # whether Item 15 covers the absence. Fields already ABSENT are unchanged.
-_ITEM15_EXCUSABLE: frozenset[str] = frozenset({
-    "net_contents",
-    "producer_bottler_name_address",
-})
+_ITEM15_EXCUSABLE: frozenset[str] = frozenset(
+    {
+        "net_contents",
+        "producer_bottler_name_address",
+    }
+)
 
 
 def assess(findings: LabelFindings, product_type: str | None) -> LabelFindings:
@@ -54,7 +56,9 @@ def assess(findings: LabelFindings, product_type: str | None) -> LabelFindings:
     verdict re-rolled from the updated fields.
     """
     updated = [_apply_excusals(f, product_type) for f in findings.fields]
-    overall = max((f.verdict for f in updated), key=lambda v: v.value) if updated else findings.verdict
+    overall = (
+        max((f.verdict for f in updated), key=lambda v: v.value) if updated else findings.verdict
+    )
     return LabelFindings(
         verdict=overall,
         fields=updated,

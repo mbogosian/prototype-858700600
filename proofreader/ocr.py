@@ -31,6 +31,7 @@ def get_engine():
         with _init_lock:
             if _engine is None:
                 from rapidocr_onnxruntime import RapidOCR
+
                 logger.info("Loading RapidOCR engine (first-use initialization)...")
                 _engine = RapidOCR()
                 logger.info("RapidOCR engine ready.")

@@ -322,7 +322,9 @@ def _process(pdf_path: Path, job_id: str, outbox: Path) -> None:
         logs = list(job_state.get("logs", []))
         original_filename = job_state.get("original_filename")
         submitted_at = job_state.get("submitted_at")
-    report.render(job_id, page1, annotated_zone, findings, job_dir, logs, original_filename, submitted_at)
+    report.render(
+        job_id, page1, annotated_zone, findings, job_dir, logs, original_filename, submitted_at
+    )
     shutil.move(str(pdf_path), job_dir / "original.pdf")
     pdf_path.with_suffix(".json").unlink(missing_ok=True)
     _set_job(job_id, status="complete", verdict=verdict)
@@ -343,9 +345,7 @@ def _save_thumbnail(page1, job_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 _KEEPALIVE_INTERVAL = 20  # seconds between pings
-_KEEPALIVE_URL = (
-    f"http://127.0.0.1:{os.environ.get('PROOFREADER_PORT', '8000')}/health"
-)
+_KEEPALIVE_URL = f"http://127.0.0.1:{os.environ.get('PROOFREADER_PORT', '8000')}/health"
 
 
 def _keepalive_worker() -> None:
@@ -366,10 +366,7 @@ def _keepalive_worker() -> None:
         else:
             time.sleep(_KEEPALIVE_INTERVAL)
         with _jobs_lock:
-            active = any(
-                j.get("status") in ("queued", "processing")
-                for j in _jobs.values()
-            )
+            active = any(j.get("status") in ("queued", "processing") for j in _jobs.values())
         if not active:
             continue
         try:
@@ -410,9 +407,7 @@ def _write_sidecar(pdf_path: Path, job_id: str, original_filename: str) -> None:
     the outbox is the durable record thereafter).
     """
     sidecar = pdf_path.with_suffix(".json")
-    sidecar.write_text(
-        json.dumps({"job_id": job_id, "original_filename": original_filename})
-    )
+    sidecar.write_text(json.dumps({"job_id": job_id, "original_filename": original_filename}))
 
 
 def submit_upload(pdf_bytes: bytes, original_filename: str) -> str:
@@ -592,9 +587,7 @@ def start(
     _observer.schedule(_InboxHandler(), str(inbox), recursive=False)
     _observer.start()
 
-    threading.Thread(
-        target=_keepalive_worker, daemon=True, name="proofreader-keepalive"
-    ).start()
+    threading.Thread(target=_keepalive_worker, daemon=True, name="proofreader-keepalive").start()
 
     logger.info("Worker pool started: n_workers=%d inbox=%s outbox=%s", n_workers, inbox, outbox)
 
