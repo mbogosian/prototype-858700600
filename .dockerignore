@@ -20,7 +20,9 @@ reference/
 
 .dockerignore
 .git/
+.github/
 .gitignore
 .pytest_cache/
 .ruff_cache/
 Dockerfile
+containerapp.yaml

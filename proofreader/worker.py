@@ -31,7 +31,7 @@ way. The browser listens on /events for {job_id, verdict} notifications.
 
 ## Azure keepalive
 
-A daemon thread (_keepalive_worker) pings GET /health every 30 seconds while any
+A daemon thread (_keepalive_worker) pings GET /health every 20 seconds while any
 jobs are queued or processing. Azure Container Apps scales a replica to zero when
 it sees no incoming HTTP traffic for ~5 minutes; this prevents a scale-down event
 from interrupting an in-flight pipeline run. The thread checks _jobs before each
@@ -342,21 +342,29 @@ def _save_thumbnail(page1, job_dir: Path) -> None:
 # Azure keepalive
 # ---------------------------------------------------------------------------
 
-_KEEPALIVE_INTERVAL = 30  # seconds between pings
+_KEEPALIVE_INTERVAL = 20  # seconds between pings
 _KEEPALIVE_URL = (
     f"http://127.0.0.1:{os.environ.get('PROOFREADER_PORT', '8000')}/health"
 )
 
 
 def _keepalive_worker() -> None:
-    """Ping /health every 30 s while any jobs are queued or processing.
+    """Ping /health every 20 s while any jobs are queued or processing.
 
     Prevents Azure Container Apps from scaling the replica to zero mid-pipeline.
     Skips the ping when the job queue is empty so idle instances still scale down.
     Runs as a daemon thread for the lifetime of the process; no explicit stop needed.
+
+    The first ping fires immediately (before the first sleep) so that a job
+    submitted shortly after a cold start is protected before the first interval
+    elapses.
     """
+    first = True
     while True:
-        time.sleep(_KEEPALIVE_INTERVAL)
+        if first:
+            first = False
+        else:
+            time.sleep(_KEEPALIVE_INTERVAL)
         with _jobs_lock:
             active = any(
                 j.get("status") in ("queued", "processing")

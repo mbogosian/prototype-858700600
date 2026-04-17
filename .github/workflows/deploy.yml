@@ -1,0 +1,74 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------
+      # Authenticate to Azure.
+      # AZURE_CREDENTIALS must be a service principal JSON created with:
+      #   az ad sp create-for-rbac --name proofreader-deploy --sdk-auth \
+      #     --role contributor \
+      #     --scopes /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>
+      # The principal also needs AcrPush on the registry:
+      #   az role assignment create \
+      #     --assignee <CLIENT_ID> \
+      #     --scope $(az acr show --name <REGISTRY_NAME> --query id -o tsv) \
+      #     --role AcrPush
+      # -----------------------------------------------------------------
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # az acr login uses the Azure CLI token set above, so no separate
+      # registry username/password secret is needed.
+      - name: Log in to ACR
+        run: az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
+
+      # -----------------------------------------------------------------
+      # Build and push the Docker image.
+      # GHA cache preserves layers across runs; the expensive model-download
+      # layer is only re-executed when the Dockerfile changes above it.
+      # -----------------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/proofreader:${{ github.sha }}
+            ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/proofreader:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # -----------------------------------------------------------------
+      # Update the ANTHROPIC_API_KEY secret in the container app, then
+      # roll out the new image.  The secret update is idempotent — it is
+      # safe to run on every deploy and picks up key rotations automatically.
+      # -----------------------------------------------------------------
+      - name: Update API key secret
+        run: |
+          az containerapp secret set \
+            --name ${{ secrets.AZURE_CONTAINERAPP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --secrets "anthropic-api-key=${{ secrets.ANTHROPIC_API_KEY }}"
+
+      - name: Deploy new image
+        run: |
+          az containerapp update \
+            --name ${{ secrets.AZURE_CONTAINERAPP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io/proofreader:${{ github.sha }}

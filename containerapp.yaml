@@ -1,0 +1,32 @@
+# Azure Container Apps configuration for ProofReader.
+#
+# Reference only — see README.md § "Azure deployment walkthrough" for
+# the full setup procedure.  After initial creation, the GitHub Actions
+# deploy workflow keeps the running image up to date via
+# `az containerapp update --image` on every push to main.
+
+location: centralus
+resourceGroup: proofreader-rsrcgrp
+type: Microsoft.App/containerApps
+name: proofreader
+properties:
+  managedEnvironmentId: >-
+    /subscriptions/2683e268-0ca5-4dc2-84d3-dd773dc66a7a/resourceGroups/proofreader-rsrcgrp/providers/Microsoft.App/managedEnvironments/proofreader-env
+  configuration:
+    ingress:
+      external: true
+      targetPort: 8000
+      transport: auto
+  template:
+    containers:
+      - name: proofreader
+        image: proofreader.azurecr.io/proofreader:latest
+        resources:
+          cpu: 4.0
+          memory: 8Gi
+        env:
+          - name: PROOFREADER_WORKERS
+            value: "1"
+    scale:
+      minReplicas: 0
+      maxReplicas: 1

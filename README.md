@@ -627,6 +627,221 @@ PaddleOCR requires approximately 1–1.5 GB RAM at inference time. The 2 GB allo
 
 See the Setup section above for the full `docker compose` and bare-uvicorn workflows.
 
+### Azure deployment walkthrough
+
+This section documents the one-time setup procedure and the ongoing deploy flow. The `containerapp.yaml` file in the repo root captures the final container app configuration for reference.
+
+#### Prerequisites
+
+- Azure CLI (`az`) installed and logged in: `az login`
+- Docker running locally
+- An Azure subscription
+
+#### Step 1 — Register resource providers (new subscriptions only)
+
+New subscriptions do not have the required namespaces enabled by default:
+
+```bash
+az provider register --namespace Microsoft.ContainerRegistry
+az provider register --namespace Microsoft.App
+az provider register --namespace Microsoft.OperationalInsights
+```
+
+Wait until all three show `"Registered"` (1–3 minutes):
+
+```bash
+az provider show --namespace Microsoft.ContainerRegistry --query registrationState
+az provider show --namespace Microsoft.App --query registrationState
+az provider show --namespace Microsoft.OperationalInsights --query registrationState
+```
+
+#### Step 2 — Create the resource group and container registry
+
+```bash
+az group create \
+  --name proofreader-rsrcgrp \
+  --location centralus
+
+az acr create \
+  --resource-group proofreader-rsrcgrp \
+  --name proofreader \
+  --sku Basic \
+  --admin-enabled true
+```
+
+ACR names must be globally unique. If `proofreader` is taken, choose another name and substitute it throughout.
+
+Note: `az acr build` (cloud-side build) is restricted on new/free subscriptions. Build and push locally instead (step 3).
+
+#### Step 3 — Build and push the initial image
+
+`az acr login` uses the Azure CLI session token — no separate password needed:
+
+```bash
+az acr login --name proofreader
+docker build -t proofreader.azurecr.io/proofreader:latest .
+docker push proofreader.azurecr.io/proofreader:latest
+```
+
+Run these from the repo root (where `Dockerfile` lives). The first build takes several minutes; the model-download layer (~200 MB) is cached in subsequent builds.
+
+#### Step 4 — Create the Container Apps managed environment
+
+```bash
+az containerapp env create \
+  --name proofreader-env \
+  --resource-group proofreader-rsrcgrp \
+  --location centralus
+```
+
+Note: each `az containerapp env create` invocation auto-creates a Log Analytics workspace. If you run this command multiple times (e.g. after a failed attempt), orphan workspaces accumulate in the resource group. Clean them up with:
+
+```bash
+az monitor log-analytics workspace list \
+  --resource-group proofreader-rsrcgrp \
+  --query '[].{name:name, customerId:customerId}' --out table
+
+# Delete any workspace whose customerId does not match the output of:
+az containerapp env show \
+  --name proofreader-env \
+  --resource-group proofreader-rsrcgrp \
+  --query properties.appLogsConfiguration.logAnalyticsConfiguration.customerId -o tsv
+```
+
+#### Step 5 — Create the container app
+
+Get the ACR admin credentials (needed only for initial creation; replaced by managed identity in step 6):
+
+```bash
+ACR_USER=$(az acr credential show --name proofreader --query username -o tsv)
+ACR_PASS=$(az acr credential show --name proofreader --query 'passwords[0].value' -o tsv)
+```
+
+Create the app:
+
+```bash
+az containerapp create \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --environment proofreader-env \
+  --image proofreader.azurecr.io/proofreader:latest \
+  --target-port 8000 \
+  --ingress external \
+  --min-replicas 0 \
+  --max-replicas 1 \
+  --cpu 4.0 \
+  --memory 8Gi \
+  --env-vars PROOFREADER_WORKERS=1 \
+  --registry-server proofreader.azurecr.io \
+  --registry-username $ACR_USER \
+  --registry-password $ACR_PASS
+```
+
+#### Step 6 — Switch registry auth to managed identity
+
+Assign a system-managed identity to the app:
+
+```bash
+az containerapp identity assign \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --system-assigned
+```
+
+Grant it `AcrPull` on the registry:
+
+```bash
+PRINCIPAL_ID=$(az containerapp show \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --query identity.principalId -o tsv)
+
+ACR_ID=$(az acr show --name proofreader --query id -o tsv)
+
+az role assignment create \
+  --assignee $PRINCIPAL_ID \
+  --scope $ACR_ID \
+  --role AcrPull
+```
+
+Wire the registry to use the managed identity (removes the admin credential):
+
+```bash
+az containerapp registry set \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --server proofreader.azurecr.io \
+  --identity system
+```
+
+#### Step 7 — Set the Anthropic API key
+
+The key is stored as a Container Apps secret and injected as an environment variable. It is never written to any file in the repository.
+
+```bash
+az containerapp secret set \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --secrets "anthropic-api-key=<YOUR_ANTHROPIC_API_KEY>"
+
+az containerapp update \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --set-env-vars "ANTHROPIC_API_KEY=secretref:anthropic-api-key"
+```
+
+#### Step 8 — Set up GitHub Actions CI/CD
+
+The deploy workflow (`.github/workflows/deploy.yml`) pushes a new image and updates the container app on every push to `main`. It needs five repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | How to obtain |
+|---|---|
+| `AZURE_CREDENTIALS` | See below |
+| `AZURE_REGISTRY_NAME` | `proofreader` (the ACR name) |
+| `AZURE_RESOURCE_GROUP` | `proofreader-rsrcgrp` |
+| `AZURE_CONTAINERAPP_NAME` | `proofreader` |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+
+Create the service principal for `AZURE_CREDENTIALS`:
+
+```bash
+az ad sp create-for-rbac \
+  --name proofreader-deploy \
+  --sdk-auth \
+  --role contributor \
+  --scopes /subscriptions/2683e268-0ca5-4dc2-84d3-dd773dc66a7a/resourceGroups/proofreader-rsrcgrp
+```
+
+The principal also needs `AcrPush` on the registry:
+
+```bash
+CLIENT_ID=$(az ad sp list --display-name proofreader-deploy --query '[0].appId' -o tsv)
+ACR_ID=$(az acr show --name proofreader --query id -o tsv)
+
+az role assignment create \
+  --assignee $CLIENT_ID \
+  --scope $ACR_ID \
+  --role AcrPush
+```
+
+Copy the full JSON output of the `create-for-rbac` command into the `AZURE_CREDENTIALS` secret.
+
+#### Ongoing deploys
+
+After setup is complete, every push to `main` automatically builds a new image, pushes it to ACR, and updates the container app. No manual steps required.
+
+To deploy manually without pushing:
+
+```bash
+az acr login --name proofreader
+docker build -t proofreader.azurecr.io/proofreader:<TAG> .
+docker push proofreader.azurecr.io/proofreader:<TAG>
+az containerapp update \
+  --name proofreader \
+  --resource-group proofreader-rsrcgrp \
+  --image proofreader.azurecr.io/proofreader:<TAG>
+```
+
 ---
 
 ## Appendix: Theoretical Migration Path to Production
