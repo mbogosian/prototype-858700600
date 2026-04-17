@@ -36,4 +36,4 @@ EXPOSE 8000
 
 # ANTHROPIC_API_KEY must be injected at runtime via -e or an env_file.
 # Do not bake credentials into the image.
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
