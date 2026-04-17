@@ -138,6 +138,56 @@ CATALOG: dict[str, dict] = {
         "label_type": "combined",
         "product_type": "malt_beverage",
     },
+    # --- Synthetic AI-background labels (trim=False: plain warning band must survive) ---
+    "syn-ds-old-tom-pass": {
+        "image": "synthetic-ds-brand1-pass.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "distilled_spirits",
+    },
+    "syn-ds-old-tom-fail-case": {
+        "image": "synthetic-ds-brand1-fail-warning-case.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "distilled_spirits",
+    },
+    "syn-ds-old-tom-fail-bold": {
+        "image": "synthetic-ds-brand1-fail-warning-bold.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "distilled_spirits",
+    },
+    "syn-ds-iron-ridge-pass": {
+        "image": "synthetic-ds-brand2-pass.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "distilled_spirits",
+    },
+    "syn-mb-summit-creek-pass": {
+        "image": "synthetic-mb-brand-pass.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "malt_beverage",
+    },
+    "syn-wine-crestline-pass": {
+        "image": "synthetic-wine-modern-brand-pass.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "wine",
+    },
+    "syn-wine-maison-pass": {
+        "image": "synthetic-wine-vintage-brand-pass.jpg",
+        "crop": None,
+        "trim": False,
+        "label_type": "brand",
+        "product_type": "wine",
+    },
 }
 
 
@@ -220,6 +270,42 @@ TESTS = [
         "labels": ["wine-brand-01", "wine-back-01"],
         "scan_dpi": 400,
     },
+    # --- Synthetic AI-background labels: government warning font weight -----
+    {
+        "output": "test-13-ds-ai-old-tom-pass.pdf",
+        "desc": "DS AI label: correct government warning (GOVERNMENT WARNING: bold+caps, body regular)",
+        "labels": ["syn-ds-old-tom-pass"],
+    },
+    {
+        "output": "test-14-ds-ai-old-tom-fail-warning-case.pdf",
+        "desc": "DS AI label: wrong warning case (Government Warning: title-case, non-bold)",
+        "labels": ["syn-ds-old-tom-fail-case"],
+    },
+    {
+        "output": "test-15-ds-ai-old-tom-fail-warning-bold.pdf",
+        "desc": "DS AI label: wrong warning weight (entire warning in bold; body must not be bold)",
+        "labels": ["syn-ds-old-tom-fail-bold"],
+    },
+    {
+        "output": "test-16-ds-ai-iron-ridge-pass.pdf",
+        "desc": "DS AI label: Iron Ridge rye whiskey, correct formatting",
+        "labels": ["syn-ds-iron-ridge-pass"],
+    },
+    {
+        "output": "test-17-mb-ai-summit-creek-pass.pdf",
+        "desc": "malt beverage AI label: Summit Creek ale, correct formatting",
+        "labels": ["syn-mb-summit-creek-pass"],
+    },
+    {
+        "output": "test-18-wine-ai-crestline-pass.pdf",
+        "desc": "wine AI label (modern): Crestline Cabernet Sauvignon, correct formatting",
+        "labels": ["syn-wine-crestline-pass"],
+    },
+    {
+        "output": "test-19-wine-ai-maison-pass.pdf",
+        "desc": "wine AI label (vintage): Maison du Soleil Chardonnay, correct formatting",
+        "labels": ["syn-wine-maison-pass"],
+    },
 ]
 
 
@@ -260,8 +346,11 @@ def extract_label(key: str) -> Image.Image:
         half = w // 2
         img = img.crop((0, 0, half, h) if side == "left" else (half, 0, w, h))
 
-    # Vertical trim: remove white borders and explanatory text bands
-    img = trim_to_content(img)
+    # Vertical trim: remove white borders and explanatory text bands.
+    # Skipped for synthetic labels (trim=False) because their plain warning
+    # band would be stripped by the saturation detector.
+    if entry.get("trim", True):
+        img = trim_to_content(img)
     return img
 
 

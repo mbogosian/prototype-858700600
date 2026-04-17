@@ -33,17 +33,15 @@ Much of this work is mechanical: confirming that the government warning statemen
 
 ### With Docker (recommended)
 
-Requires Docker and an Anthropic API key. PaddleOCR models (~200 MB) are
-downloaded and baked into the image at build time so they are available
-immediately on container start with no cold-start download delay.
+Requires Docker and an Anthropic API key. OCR models are bundled inside the
+`rapidocr-onnxruntime` wheel and require no separate download.
 
 ```bash
 # Create the work directories used as bind mounts
 mkdir -p inbox outbox
 
-# Build the image (downloads ~200 MB of PaddleOCR models on first build;
-# subsequent builds reuse the cached layer unless pyproject.toml or uv.lock
-# changes)
+# Build the image (subsequent builds reuse the cached layer unless
+# pyproject.toml or uv.lock changes)
 docker compose build
 
 # Start the server
@@ -83,33 +81,34 @@ to be set to override:
 
 ### Developer workflow
 
-Install dev dependencies with `uv sync --extra dev`, then:
+Dev dependencies (`pytest`, `ruff`, `ty`) are in the `dev` dependency group and
+are included by `uv sync` automatically. No extra flag needed.
 
 ```bash
 # Run the unit test suite (integration tests excluded by default)
-uv run --extra dev pytest
+uv run pytest
 
 # With coverage report
-uv run --extra dev pytest --cov --cov-report=term-missing
+uv run pytest --cov --cov-report=term-missing
 
-# Run integration tests (requires PaddleOCR initialisation and sample PDFs
-# in tests/sample_applications/ — slow, loads ~1.5 GB into RAM)
-uv run --extra dev pytest -m integration
+# Run integration tests (requires RapidOCR initialisation and sample PDFs
+# in tests/sample_applications/)
+uv run pytest -m integration
 
 # Lint
-uv run --extra dev ruff check
+uv run ruff check
 
 # Auto-fix lint issues
-uv run --extra dev ruff check --fix
+uv run ruff check --fix
 
 # Format
-uv run --extra dev ruff format
+uv run ruff format
 
 # Type check
-uv run --extra dev ty check
+uv run ty check
 ```
 
-The default pytest run (`-m "not integration"`) is fast — no PaddleOCR, no API
+The default pytest run (`-m "not integration"`) is fast — no RapidOCR, no API
 calls, all external dependencies mocked. It's safe to run on every save.
 
 ---
@@ -152,7 +151,7 @@ calls, all external dependencies mocked. It's safe to run on every save.
 
 ### Threading model
 
-The FastAPI app and all SSE generators run on a single asyncio event loop (uvicorn's main thread). PDF processing runs in a `ThreadPoolExecutor` so multiple jobs can be in flight simultaneously without blocking the event loop. A watchdog thread monitors the inbox for manually-dropped files. Within each job, the Anthropic API call and most pipeline stages run concurrently across workers; OCR inference (anchor detection in `pdf.py` and label annotation in `annotate.py`) is serialized via a per-module lock because PaddleOCR's C++ runtime is not thread-safe.
+The FastAPI app and all SSE generators run on a single asyncio event loop (uvicorn's main thread). PDF processing runs in a `ThreadPoolExecutor` so multiple jobs can be in flight simultaneously without blocking the event loop. A watchdog thread monitors the inbox for manually-dropped files. Within each job, the Anthropic API call and most pipeline stages run concurrently across workers; OCR inference (anchor detection in `pdf.py` and label annotation in `annotate.py`) is serialized via a per-module lock because RapidOCR's ONNX Runtime session is not thread-safe.
 
 The two concurrency domains are bridged in `worker.py` via `loop.call_soon_threadsafe()`: worker threads schedule log lines and job-completion events onto the event loop rather than touching asyncio primitives directly. Shared job state (`_jobs`) is protected by a plain `threading.Lock`; the critical sections are trivially short so event loop handlers blocking on the lock is not a practical concern.
 
@@ -165,7 +164,7 @@ Input PDF
 1. PyMuPDF — render page 1 at 300 DPI
    Save page 1 thumbnail (JPEG, small) for master list
         │
-        ├──► Upper zone  →  PaddleOCR → read Item 5 checkbox (product type only)
+        ├──► Upper zone  →  RapidOCR → read Item 5 checkbox (product type only)
         │                              No data transmitted externally
         │
         └──► Lower zone  →  crop label image area
@@ -185,7 +184,7 @@ Input PDF
    Country of origin: checked only if label contains import indicators
              │
              ▼
-4. PaddleOCR on label zone — text + rotated quad bounding boxes
+4. RapidOCR on label zone — text + rotated quad bounding boxes
    Match LabelReader findings → pixel locations for annotation
    Angled text: draw native quad polygon
    Curved/unlocatable text: dashed approximate region
@@ -210,15 +209,15 @@ Input PDF
 - File watching: watchdog
 - Worker pool: `concurrent.futures.ThreadPoolExecutor`
 - PDF rendering: PyMuPDF (`pymupdf`)
-- OCR: PaddleOCR (local — form field reading and label text localization)
+- OCR: rapidocr-onnxruntime (local — form field reading and label text localization)
 - Vision/AI: `LabelReader` abstraction; current implementation uses Anthropic Claude API
 - Image annotation: Pillow
 - Report templating: Jinja2
-- Deployment: Docker + Railway (see Hosting)
+- Deployment: Docker + Azure Container Apps (see Hosting)
 
 ---
 
-## Repository Structure (planned)
+## Repository Structure
 
 ```
 proofreader/
@@ -227,17 +226,16 @@ proofreader/
 │   ├── __init__.py
 │   ├── worker.py            # ThreadPoolExecutor pool, watchdog watcher, in-flight state
 │   ├── pdf.py               # PDF rendering, zone extraction, thumbnail (PyMuPDF)
-│   ├── ocr.py               # Item 5 extraction + label text localization (PaddleOCR)
+│   ├── ocr.py               # RapidOCR singleton shared across pdf.py and annotate.py
 │   ├── vision.py            # LabelReader abstraction + Claude API implementation
-│   ├── requirements.py      # TTB requirement sets by product type
+│   ├── ttb_requirements.py  # TTB requirement sets by product type
 │   ├── compare.py           # Comparison logic and verdict generation
 │   ├── annotate.py          # Polygon annotation (Pillow)
 │   └── report.py            # HTML/JSON report generation (Jinja2)
 ├── reference/               # TTB regulatory reference materials (read-only)
-├── static/                  # CSS, JS for web UI
-├── templates/
+├── static/
 │   ├── index.html           # Web UI: upload, master list, log window
-│   └── report.html          # Per-application recommendation report
+│   └── report.html          # Per-application recommendation report template
 ├── tests/
 │   ├── sample_labels/       # TTB side-by-side comparison images (visual reference)
 │   └── sample_applications/ # Test PDFs (scanned Form F 5100.31 submissions)
@@ -269,7 +267,31 @@ Form F 5100.31 contains applicant information in its upper zone (name, company, 
 
 **Known limitation — logs not available in real time for late-joining clients:** Pipeline log output is streamed live via SSE (`GET /logs`) and also captured in the completed `report.html` (in a collapsible section, up to 1000 lines). A user who connects after a job finishes can read the logs in the report. However, there is no way to follow a job's progress in real time if you did not connect before or during processing — there is no replay of the live stream.
 
-**Known limitation — PaddleOCR process stability and OCR throughput:** PaddleOCR's C++ runtime can produce fatal signals (SIGSEGV) on certain image sizes or memory layouts that Python's exception handling cannot intercept. When this occurs the worker process terminates; any in-flight jobs are lost, but PDFs still in the inbox are re-queued automatically on server restart. To reduce the risk of concurrent-access crashes, OCR inference is serialized within each module — only one inference runs at a time per singleton instance. This means OCR forms a serial bottleneck across all N workers at the anchor-detection and annotation stages. This is not a concern for the prototype: the Claude API call (network round-trip, several seconds) dominates per-job latency by a wide margin, so serializing a local CPU-bound step that completes in under a second does not meaningfully reduce throughput. If OCR ever became the bottleneck — for example after switching to a faster local vision model — the fix is to replace the shared singleton with a `threading.local()` instance so each worker thread owns its own PaddleOCR object and inferences can run fully in parallel. A production deployment should additionally run OCR in a subprocess per job so a crash does not kill the main process. See Production Considerations.
+**Known limitation — end-to-end latency:** The TTB compliance team cited approximately 5 seconds as the threshold for usable response time. The current prototype falls short: total per-job time is typically 25–35 seconds. There are two independent levers that together close most of the gap.
+
+*Lever 1 — local vision model (biggest win).* The `LabelReader` abstraction in `vision.py` exists precisely as the swap point for this. The Claude API round-trip is 10–17 seconds and is entirely network-bound; a GPU-accelerated local model (Qwen2-VL 7B or Florence-2 via Ollama) runs in roughly 1–3 seconds on modest hardware. The tradeoff is accuracy on small and stylized label text — which is why Claude was chosen for the prototype — but a production path would tune a local model on TTB label samples and validate the tradeoff empirically before committing.
+
+*Lever 2 — overlap annotation OCR with the vision call.* Currently the pipeline runs sequentially: anchor OCR → vision model → annotation OCR. The annotation OCR pass does not depend on the vision model result — it needs only the label zone image, which is ready before the model call starts. Running them concurrently (they consume different resources: CPU vs. GPU/network) saves 5–10 seconds with no accuracy impact. The asyncio/threadpool structure already supports this; it is a plumbing change in `worker.py`, not a structural one.
+
+Estimated per-stage breakdown before and after applying both levers (local model figures are projections, not measured):
+
+| Stage | Current | With local model + parallelism |
+|---|---|---|
+| Anchor OCR | ~3s | ~1s |
+| Vision model | ~12s | ~2s (local, overlapped with annotation OCR) |
+| Annotation OCR | ~8s | ~2s (overlapped with vision model) |
+| Everything else | ~2s | ~1s |
+| **Total** | **~25–35s** | **~5–7s** |
+
+The 5-second target is not achievable with the Claude API backend — the network round-trip alone exceeds it. With a local model it becomes plausible. Neither change requires structural rewrites; the architecture was designed with this migration in mind.
+
+**Known limitation — OCR throughput:** OCR inference is serialized within each module — only one inference runs at a time per singleton instance. This means OCR forms a serial bottleneck across all N workers at the anchor-detection and annotation stages. This is not a concern for the current prototype: the Claude API call dominates per-job latency by a wide margin. If OCR ever became the bottleneck — for example after switching to a faster local vision model — the fix is to replace the shared singleton with a `threading.local()` instance so each worker thread owns its own RapidOCR object and inferences can run fully in parallel.
+
+**Known UX gap — no per-job progress feedback:** While a job is processing, the UI shows a spinner and the status "PROCESSING" with no indication of which pipeline stage it is in. For a tool that takes 25–35 seconds per job, this is a poor experience: agents cannot tell whether the job is nearly done or just started. A stage-level progress indicator (e.g., "Reading form... Analyzing label... Generating report...") would substantially reduce perceived wait time and make the latency gap less noticeable in practice. The SSE infrastructure that already drives the live log stream is the natural implementation path.
+
+**Known UX gap — resubmission guidance for degraded images:** When a label image is too degraded to read (glare, bad angle, extreme reduction), the system returns `INDETERMINATE` and flags it for resubmission. In practice, agents encounter this regularly — one stakeholder specifically cited glare on bottles and labels photographed at odd angles as common submission problems. The current report text is generic; a more useful response would identify the specific degradation (e.g., "label image overexposed in upper-right quadrant") and give actionable resubmission guidance (e.g., "photograph under diffuse lighting with the label surface perpendicular to the camera"). This is a prompt and report-template change with no pipeline implications.
+
+**Known UX gap — accessibility and learnability:** The TTB compliance team spans a wide range of technical comfort, from agents who have been doing this work since before the current COLA system to recent hires. The UI was designed to be self-evident — large drop zones, clear pane labels, minimal controls — but it has not been tested with less tech-comfortable users and has no onboarding, tooltips, or inline help. A brief guided walkthrough on first use (or contextual help on hover for non-obvious controls like the two-state delete confirm) would address this without adding visual clutter for experienced users.
 
 ---
 
@@ -384,15 +406,15 @@ Minimum font size by container volume (from net contents):
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Primary language | Python | All key libraries (PyMuPDF, PaddleOCR, Pillow, Anthropic SDK, FastAPI) are Python-native |
+| Primary language | Python | All key libraries (PyMuPDF, rapidocr-onnxruntime, Pillow, Anthropic SDK, FastAPI) are Python-native |
 | AI approach | Hybrid: local OCR + cloud vision | Form data (PII) stays local; label images are public artwork and can be transmitted |
 | Vision model | Claude API | Substantially better than current 7B local models at reading small/stylized label text; label images carry no PII |
-| Form field extraction | PaddleOCR (local) | No PII leaves the system; sufficient for extracting typed/printed text from structured form |
+| Form field extraction | rapidocr-onnxruntime (local) | No PII leaves the system; sufficient for extracting typed/printed text from structured form; models bundled in the wheel |
 | Output format | Self-contained HTML + JSON | HTML is portable, printable, requires no tooling to open; JSON enables downstream integration |
 | Matching strategy | Three-tier: exact / normalized / fail | Handles case like "STONE'S THROW" vs "Stone's Throw" without false rejections |
 | Label zone extraction | Anchor text detection | "AFFIX COMPLETE SET OF LABELS BELOW" is a reliable split point on page 1 |
-| Bounding box localization | Two-step: vision model identifies fields, PaddleOCR locates them in pixel space | Vision model understands content; OCR returns coordinates |
-| Polygon annotation | Use `ImageDraw.polygon()` with PaddleOCR's native rotated quad output | More accurate than axis-aligned rectangles for angled text |
+| Bounding box localization | Two-step: vision model identifies fields, RapidOCR locates them in pixel space | Vision model understands content; OCR returns coordinates |
+| Polygon annotation | Use `ImageDraw.polygon()` with RapidOCR's native rotated quad output | More accurate than axis-aligned rectangles for angled text |
 
 ---
 
@@ -500,9 +522,9 @@ Internally, the web server writes uploaded PDFs to a watched `inbox/` directory.
 ### R10. Angled and curved text localization
 **Question:** How do we handle bounding box annotation for text that is not strictly horizontal?
 
-**Resolution: Use PaddleOCR's native rotated quad output (Option C) for angled text; draw approximate dashed region for curved text that cannot be precisely located (Option A). Both applied together.**
+**Resolution: Use RapidOCR's native rotated quad output (Option C) for angled text; draw approximate dashed region for curved text that cannot be precisely located (Option A). Both applied together.**
 
-**Trade-offs:** PaddleOCR already returns four-point quadrilateral coordinates rather than axis-aligned rectangles, so using `ImageDraw.polygon()` costs nothing extra and is more accurate. Curved text (arcing along a logo border, etc.) genuinely cannot be captured by any single polygon without specialized curve-detection tooling — accepting an approximate enclosing region with a visual "approximate" indicator is the honest answer. The vision model reads all of this correctly regardless; the limitation is purely in the visual annotation layer.
+**Trade-offs:** RapidOCR already returns four-point quadrilateral coordinates rather than axis-aligned rectangles, so using `ImageDraw.polygon()` costs nothing extra and is more accurate. Curved text (arcing along a logo border, etc.) genuinely cannot be captured by any single polygon without specialized curve-detection tooling — accepting an approximate enclosing region with a visual "approximate" indicator is the honest answer. The vision model reads all of this correctly regardless; the limitation is purely in the visual annotation layer.
 
 ---
 
@@ -569,11 +591,11 @@ The component boundaries in the code (`worker.py`, `pdf.py`, `vision.py`, `repor
 
 **Audit trail and record retention.** Federal compliance workflows require that decisions and their basis be retained. A deployed system would need to store the input PDF, structured findings, and the agent's decision consistent with TTB's document retention policies.
 
-**Observability, alerting, and incident investigation.** The prototype emits unstructured log lines and exposes a `/health` endpoint used only to suppress Azure's scale-to-zero timer. A production deployment would need: structured logging with a correlation ID attached to each submission (so all log lines for one PDF are retrievable together); metrics on queue depth, per-stage latency, error rates, and Anthropic API quota consumption; alerting on elevated `ERROR` verdict rates, queue backlog growth, and API failures; and a readiness probe that verifies PaddleOCR can actually run, not just that the process is alive. Without these, a silent failure mode (e.g., the Claude API returning errors for every submission) would not surface until an agent noticed the review queue filling up.
+**Observability, alerting, and incident investigation.** The prototype emits unstructured log lines and exposes a `/health` endpoint used only to suppress Azure's scale-to-zero timer. A production deployment would need: structured logging with a correlation ID attached to each submission (so all log lines for one PDF are retrievable together); metrics on queue depth, per-stage latency, error rates, and Anthropic API quota consumption; alerting on elevated `ERROR` verdict rates, queue backlog growth, and API failures; and a readiness probe that verifies OCR inference can actually run, not just that the process is alive. Without these, a silent failure mode (e.g., the Claude API returning errors for every submission) would not surface until an agent noticed the review queue filling up.
 
 **Authentication and authorization.** The prototype has no authentication or authorization controls. Any user with network access to the server can submit PDFs for processing, view all results (including reports for submissions they did not make), and delete completed jobs that other users submitted — permanently removing all associated files. The broadcast log stream compounds this: any connected browser receives log lines for all in-flight jobs, including submission filenames and job IDs that belong to other users. Before deployment on live data involving PII, the system needs at minimum: authenticated access to the web UI, per-submission access control so users can only retrieve and delete their own results, per-session filtering of the log stream, and audit logging of who accessed or deleted what. The `LabelReader` abstraction and the outbox file layout are both natural enforcement points.
 
-**PaddleOCR subprocess isolation.** The local OCR engine (PaddleOCR) can produce fatal signals (SIGSEGV) that terminate the worker process. The prototype serializes OCR calls to reduce concurrent-access risk, but cannot prevent all crash scenarios. A production deployment should run OCR inference in a subprocess with a timeout (e.g., via `multiprocessing`) so that a crash kills only the child, not the main worker. The `_run_ocr()` function in `pdf.py` and `annotate.py` is the natural isolation boundary.
+**OCR subprocess isolation.** The prototype serializes OCR calls to prevent concurrent-access issues with the shared ONNX Runtime session. A production deployment could instead run OCR inference in a subprocess with a timeout (e.g., via `multiprocessing`) so that any unexpected crash kills only the child process, not the main worker. The `_run_ocr()` function in `pdf.py` and `annotate.py` is the natural isolation boundary.
 
 **PII handling and access control.** Form field data (applicant name, address, registry number) is processed locally and not persisted in the prototype. A production deployment would need appropriate access controls on submission, report viewing, and stored records, consistent with TTB's data governance requirements.
 
@@ -601,7 +623,7 @@ minReplicas: 0
 maxReplicas: 1
 resources:
   cpu: 1.0
-  memory: 2Gi   # PaddleOCR requires ~1–1.5 GB
+  memory: 2Gi
 ingress:
   external: true
   targetPort: 8000
@@ -613,7 +635,7 @@ One-time setup: Azure resource group + Container Apps environment (3 CLI command
 
 ### Cold start
 
-PaddleOCR models are baked into the image at build time (~200 MB). On a cold start the models load from the local filesystem — no network download is needed. Model loading itself adds 20–40 seconds before the first job can be processed; the UI is responsive during this window but submitted jobs will queue rather than begin immediately.
+OCR models are bundled inside the `rapidocr-onnxruntime` wheel — no separate download occurs at build time or at runtime. Model loading on first use adds a few seconds before the first job can be processed; the UI is responsive during this window but submitted jobs will queue rather than begin immediately.
 
 ### Keeping alive during active work
 
@@ -625,7 +647,7 @@ Container Apps uses ephemeral storage by default — the filesystem resets on co
 
 ### Memory constraint
 
-PaddleOCR requires approximately 1–1.5 GB RAM at inference time. The 2 GB allocation above provides headroom. This exceeds Railway's free-tier limit (512 MB), which is why Azure Container Apps is preferred.
+RapidOCR's ONNX Runtime models are substantially lighter than the prior PaddleOCR backend — peak RSS during inference is well under 1 GB. The 2 GB allocation provides comfortable headroom for the FastAPI server, image buffers, and concurrent jobs. This exceeds Railway's free-tier limit (512 MB), which is why Azure Container Apps is preferred.
 
 ### Local development
 
@@ -687,7 +709,7 @@ docker build -t proofreader.azurecr.io/proofreader:latest .
 docker push proofreader.azurecr.io/proofreader:latest
 ```
 
-Run these from the repo root (where `Dockerfile` lives). The first build takes several minutes; the model-download layer (~200 MB) is cached in subsequent builds.
+Run these from the repo root (where `Dockerfile` lives). The first build resolves and installs all Python dependencies; subsequent builds reuse the cached layer unless `pyproject.toml` or `uv.lock` changes.
 
 #### Step 4 — Create the Container Apps managed environment
 
@@ -733,8 +755,8 @@ az containerapp create \
   --ingress external \
   --min-replicas 0 \
   --max-replicas 1 \
-  --cpu 4.0 \
-  --memory 8Gi \
+  --cpu 1.0 \
+  --memory 2Gi \
   --env-vars PROOFREADER_WORKERS=1 \
   --registry-server proofreader.azurecr.io \
   --registry-username $ACR_USER \
