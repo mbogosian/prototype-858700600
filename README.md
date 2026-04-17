@@ -4,7 +4,7 @@ AI-powered alcohol label verification for TTB (Alcohol and Tobacco Tax and Trade
 
 ## Demo
 
-You can [try it live](https://proofreader.whitefield-f6b7e0a1.centralus.azurecontainerapps.io/). It may take a moment to start up if it hasn't been used recently. (The service scales to zero when idle.)
+You can [try it live](https://proofreader.whitefield-f6b7e0a1.centralus.azurecontainerapps.io/). It may take a moment to start up if it hasn't been used recently (the service scales to zero when idle). [Sample PDFs](https://github.com/mbogosian/prototype-858700600/tree/main/tests/sample_applications) are available for testing.
 
 ---
 
@@ -286,6 +286,8 @@ Estimated per-stage breakdown before and after applying both levers (local model
 The 5-second target is not achievable with the Claude API backend — the network round-trip alone exceeds it. With a local model it becomes plausible. Neither change requires structural rewrites; the architecture was designed with this migration in mind.
 
 **Known limitation — OCR throughput:** OCR inference is serialized within each module — only one inference runs at a time per singleton instance. This means OCR forms a serial bottleneck across all N workers at the anchor-detection and annotation stages. This is not a concern for the current prototype: the Claude API call dominates per-job latency by a wide margin. If OCR ever became the bottleneck — for example after switching to a faster local vision model — the fix is to replace the shared singleton with a `threading.local()` instance so each worker thread owns its own RapidOCR object and inferences can run fully in parallel.
+
+**Known limitation — no real-world test data:** All test PDFs in `tests/sample_applications/` are synthetic: label images sourced from TTB's published comparison slides or AI-generated backgrounds, composited onto a clean digital copy of Form F 5100.31 by `make_test_pdf.py`. The system has not been validated against actual scanned submissions from real applicants. Real scans introduce artifacts that synthetic composites do not: JPEG compression from multifunction printers, physical skew, uneven ink density, handwritten annotations, and labels that were physically affixed before photocopying. The programmatic degradation in `test-07-bad-image.pdf` (Gaussian blur + contrast reduction) approximates a poor scan but is not a substitute for real data. Before using this system on live applications, it should be tested against a sample of actual historical Form F 5100.31 submissions — ideally including some that were previously rejected — to surface failure modes not visible in synthetic testing.
 
 **Known UX gap — no per-job progress feedback:** While a job is processing, the UI shows a spinner and the status "PROCESSING" with no indication of which pipeline stage it is in. For a tool that takes 25–35 seconds per job, this is a poor experience: agents cannot tell whether the job is nearly done or just started. A stage-level progress indicator (e.g., "Reading form... Analyzing label... Generating report...") would substantially reduce perceived wait time and make the latency gap less noticeable in practice. The SSE infrastructure that already drives the live log stream is the natural implementation path.
 
@@ -655,7 +657,7 @@ See the Setup section above for the full `docker compose` and bare-uvicorn workf
 
 ### Azure deployment walkthrough
 
-This section documents the one-time setup procedure and the ongoing deploy flow. The `containerapp.yaml` file in the repo root captures the final container app configuration for reference.
+This section documents the one-time setup procedure and the ongoing deploy flow. The `containerapp.yaml` file in the repo root captures the final container app configuration (without secrets) for reference.
 
 #### Prerequisites
 

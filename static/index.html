@@ -9,7 +9,7 @@
 
 body {
   font-family: sans-serif;
-  font-size: 14px;
+  font-size: 14pt;
   color: #222;
   background: #f5f5f5;
 }
@@ -280,6 +280,22 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
   color: #444;
 }
 .log-toggle:hover  { background: #fafafa; }
+.log-toggle-left   { display: flex; align-items: center; gap: 0.5em; }
+.btn-log-copy {
+  font-size: 0.78em;
+  font-weight: normal;
+  padding: 0.1em 0;
+  width: 4.5em;
+  text-align: center;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+  line-height: inherit;
+}
+.btn-log-copy:hover  { background: #f0f0f0; color: #222; }
+.btn-log-copy.copied { background: #d4edda; border-color: #b8dfc5; color: #155724; }
 .log-body {
   height: 160px;
   overflow-y: auto;
@@ -323,13 +339,20 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
     <h1>ProofReader</h1>
     <span class="sub">
       TTB Form 5100.31 — Label Compliance Pre-Screener
-      (<a href="https://github.com/mbogosian/prototype-858700600" target="_blank">source code on GitHub</a>)
     </span>
     <span class="conn-status conn-warn" id="connStatus">◌ Connecting…</span>
   </div>
 </header>
 
 <div class="page">
+
+  <!-- Sample data notice -->
+  <p style="font-size:0.82em; color:#777; margin-bottom:0.6em;">
+    Don't have a label application handy?
+    <a href="https://github.com/mbogosian/prototype-858700600/tree/main/tests/sample_applications" target="_blank" rel="noopener">Sample PDFs <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:middle;margin-bottom:1px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/></svg></a>
+    are available in
+    <a href="https://github.com/mbogosian/prototype-858700600" target="_blank" rel="noopener">the GitHub <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:middle;margin-bottom:1px"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.51 11.51 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.63-5.37-12-12-12z"/></svg> repository</a>.
+  </p>
 
   <!-- Upload zone -->
   <div class="upload-zone" id="uploadZone">
@@ -372,7 +395,10 @@ header .sub { font-size: 0.82em; color: #777; flex: 1; }
   <!-- Log panel -->
   <div class="log-panel">
     <div class="log-toggle" id="logToggle">
-      <span>Live Log</span>
+      <span class="log-toggle-left">
+        <span>Live Log</span>
+        <button class="btn-log-copy" id="logCopy" title="Copy log to clipboard">Copy</button>
+      </span>
       <span id="logArrow">▼</span>
     </div>
     <div class="log-body" id="logBody"></div>
@@ -701,6 +727,19 @@ function connectLogs() {
 document.getElementById("logToggle").addEventListener("click", () => {
   const collapsed = logBody.classList.toggle("collapsed");
   document.getElementById("logArrow").textContent = collapsed ? "▶" : "▼";
+});
+
+document.getElementById("logCopy").addEventListener("click", (e) => {
+  e.stopPropagation(); // prevent toggling the panel
+  const text = Array.from(logBody.querySelectorAll(".log-line"))
+    .map(el => el.textContent)
+    .join("\n");
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("logCopy");
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 1500);
+  });
 });
 
 // ── Thumbnail hover preview ───────────────────────────────────────────────────
