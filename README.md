@@ -2,6 +2,10 @@
 
 AI-powered alcohol label verification for TTB (Alcohol and Tobacco Tax and Trade Bureau) label approval applications.
 
+## Demo
+
+You can [try it live](https://proofreader.whitefield-f6b7e0a1.centralus.azurecontainerapps.io/). It may take a moment to start up if it hasn't been used recently. (The service scales to zero when idle.)
+
 ---
 
 ## Problem Summary
